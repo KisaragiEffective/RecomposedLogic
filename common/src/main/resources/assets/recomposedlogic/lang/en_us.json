@@ -1,0 +1,22 @@
+{
+  "itemGroup.recomposedlogic.main": "RecomposedLogic",
+  "item.recomposedlogic.wrench": "Wrench",
+  "item.recomposedlogic.tiny_memory": "Tiny Memory",
+  "item.recomposedlogic.blueprint": "Blueprint",
+  "item.recomposedlogic.programmed_rom": "Programmed ROM",
+  "block.recomposedlogic.pin_cable": "Pin Cable",
+  "block.recomposedlogic.junction": "Junction",
+  "block.recomposedlogic.scalar_constant": "Scalar Constant",
+  "block.recomposedlogic.scalar_add": "Scalar Add",
+  "block.recomposedlogic.scalar_comparator": "Scalar Comparator",
+  "block.recomposedlogic.boolean_and": "Boolean AND",
+  "block.recomposedlogic.boolean_not": "Boolean NOT",
+  "block.recomposedlogic.boolean_conditional": "Boolean Conditional",
+  "block.recomposedlogic.redstone_importer": "Redstone Importer",
+  "block.recomposedlogic.redstone_exporter": "Redstone Exporter",
+  "block.recomposedlogic.circuit_origin": "Circuit Origin",
+  "block.recomposedlogic.circuit_scanner": "Circuit Scanner",
+  "block.recomposedlogic.external_port": "External Port",
+  "block.recomposedlogic.rom_programmer": "ROM Programmer",
+  "block.recomposedlogic.rom_powering_gate": "ROM Powering Gate"
+}
