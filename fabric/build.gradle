@@ -2,6 +2,14 @@ plugins {
     id 'multiloader-loader'
     id 'fabric-loom'
 }
+
+sourceSets {
+    gametest {
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        runtimeClasspath += output + compileClasspath + sourceSets.main.runtimeClasspath
+    }
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${minecraft_version}"
     mappings loom.layered {
@@ -10,6 +18,7 @@ dependencies {
     }
     modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_version}"
+    gametestImplementation sourceSets.main.output
 }
 
 loom {
@@ -19,6 +28,11 @@ loom {
     }
     mixin {
         defaultRefmapName.set("${mod_id}.refmap.json")
+    }
+    mods {
+        "${mod_id}-gametest" {
+            sourceSet sourceSets.gametest
+        }
     }
     runs {
         client {
@@ -33,5 +47,19 @@ loom {
             ideConfigGenerated(true)
             runDir('runs/server')
         }
+        gametest {
+            server()
+            setConfigName('Fabric GameTest Server')
+            ideConfigGenerated(true)
+            runDir('runs/gametest')
+            source sourceSets.gametest
+            property('fabric-api.gametest', 'true')
+            property('fabric-api.gametest.report-file', "${project.layout.buildDirectory.get().asFile}/gametest-results.xml")
+            programArg('--nogui')
+        }
     }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('gametestClasses')
 }

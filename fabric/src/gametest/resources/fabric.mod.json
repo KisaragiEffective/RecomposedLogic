@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "recomposedlogic-gametest",
+  "version": "1.0.0",
+  "name": "RecomposedLogic Game Tests",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-gametest": [
+      "io.github.kisaragieffective.recomposedlogic.test.RecomposedLogicGameTest"
+    ]
+  },
+  "depends": {
+    "fabric-gametest-api-v1": "*",
+    "recomposedlogic": "*"
+  }
+}
