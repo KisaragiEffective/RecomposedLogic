@@ -17,23 +17,13 @@ public class WrenchItem extends Item {
         super(properties);
     }
 
-    public static void useOnLogic(Player player, BlockPos pos, LogicBlockEntity logic) {
-        if (logic.kind() == LogicBlockKind.CIRCUIT_ORIGIN) {
-            ORIGIN_SELECTIONS.put(player.getUUID(), pos.immutable());
-            message(player, "Origin selected");
-            return;
-        }
-        if (logic.kind() == LogicBlockKind.CIRCUIT_SCANNER) {
-            BlockPos origin = ORIGIN_SELECTIONS.get(player.getUUID());
-            if (origin == null) {
-                message(player, "Select a Circuit Origin first");
-                return;
-            }
-            logic.pairedOrigin(origin);
-            message(player, "Scanner paired to origin " + origin.toShortString());
-            return;
-        }
-        message(player, "No wrench action for " + logic.kind());
+    public static void selectOrigin(Player player, BlockPos pos) {
+        ORIGIN_SELECTIONS.put(player.getUUID(), pos.immutable());
+        message(player, "Origin selected");
+    }
+
+    public static BlockPos selectedOrigin(Player player) {
+        return ORIGIN_SELECTIONS.get(player.getUUID());
     }
 
     private static void message(Player player, String message) {

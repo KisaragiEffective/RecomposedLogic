@@ -35,6 +35,10 @@ public final class CircuitCompiler {
                 .filter(node -> node.kind() == NodeKind.EXTERNAL_OUTPUT || node.kind() == NodeKind.REDSTONE_EXPORTER)
                 .map(CircuitNode::id)
                 .toList();
+        if (outputs.isEmpty()) {
+            diagnostics.add("Circuit has no outputs");
+            return CompileResult.fail(diagnostics);
+        }
         RomProgram program = new RomProgram(WasmEmitter.emit(ir, inputs, outputs), List.copyOf(ir), inputs, outputs, scannedVolume);
         return CompileResult.ok(program, diagnostics);
     }

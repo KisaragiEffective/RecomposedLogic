@@ -31,10 +31,10 @@ public final class CircuitEvaluator {
             return SignalValue.ZERO;
         }
         Map<String, SignalValue> inputs = new HashMap<>();
-        for (String input : instruction.inputs()) {
-            String[] parts = input.split("=", 2);
+        for (int i = 0; i < instruction.inputs().size() && i < instruction.romProgram().inputs().size(); i++) {
+            String[] parts = instruction.inputs().get(i).split("=", 2);
             if (parts.length == 2) {
-                inputs.put(parts[0], values.getOrDefault(parts[1], SignalValue.ZERO));
+                inputs.put(instruction.romProgram().inputs().get(i), values.getOrDefault(parts[1], SignalValue.ZERO));
             }
         }
         Map<String, SignalValue> evaluated = evaluate(instruction.romProgram(), inputs);

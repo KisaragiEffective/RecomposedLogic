@@ -1,11 +1,12 @@
 package io.github.kisaragieffective.recomposedlogic.world;
 
 import io.github.kisaragieffective.recomposedlogic.logic.CircuitEvaluator;
+import io.github.kisaragieffective.recomposedlogic.logic.SignalType;
 import io.github.kisaragieffective.recomposedlogic.logic.SignalValue;
+import io.github.kisaragieffective.recomposedlogic.logic.RomProgram;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -17,79 +18,97 @@ public final class WorldRuntimeEvaluator {
     }
 
     public static double scalarInput(Level level, BlockPos pos, String inputName) {
-        BlockEntity blockEntity = level.getBlockEntity(pos);
-        if (!(blockEntity instanceof LogicBlockEntity logic)) {
+        LogicBlockKind kind = LogicState.kind(level, pos);
+        if (kind == null) {
             return 0.0;
         }
-        for (PortSpec spec : Ports.specs(logic)) {
+        for (PortSpec spec : LogicState.ports(level, pos)) {
             if (!spec.output() && spec.name().equals(inputName)) {
-                return valueAt(level, pos.relative(spec.direction()), new HashSet<>()).asScalar();
+                SignalValue value = valueAt(level, pos.relative(spec.direction()), spec.direction().getOpposite(), new HashSet<>());
+                return value.type() == SignalType.SCALAR ? value.asScalar() : 0.0;
             }
         }
         return 0.0;
     }
 
     public static SignalValue valueAt(Level level, BlockPos pos, Set<BlockPos> visited) {
-        BlockEntity blockEntity = level.getBlockEntity(pos);
-        if (blockEntity instanceof LogicBlockEntity logic && (logic.kind() == LogicBlockKind.PIN_CABLE || logic.kind() == LogicBlockKind.JUNCTION)) {
+        return valueAt(level, pos, null, visited);
+    }
+
+    private static SignalValue valueAt(Level level, BlockPos pos, Direction requiredOutputDirection, Set<BlockPos> visited) {
+        LogicBlockKind kind = LogicState.kind(level, pos);
+        if (kind == LogicBlockKind.PIN_CABLE || kind == LogicBlockKind.JUNCTION) {
             if (!visited.add(pos)) {
                 return SignalValue.ZERO;
             }
             for (Direction direction : Direction.values()) {
-                SignalValue value = valueAt(level, pos.relative(direction), visited);
-                if (value.type() == io.github.kisaragieffective.recomposedlogic.logic.SignalType.BOOLEAN && value.asBoolean()) {
+                SignalValue value = valueAt(level, pos.relative(direction), direction.getOpposite(), new HashSet<>(visited));
+                if (value.type() == SignalType.BOOLEAN && value.asBoolean()) {
                     return value;
                 }
-                if (value.type() == io.github.kisaragieffective.recomposedlogic.logic.SignalType.SCALAR && value.asScalar() != 0.0) {
+                if (value.type() == SignalType.SCALAR && value.asScalar() != 0.0) {
                     return value;
                 }
             }
             return SignalValue.ZERO;
         }
-        if (blockEntity instanceof LogicBlockEntity logic) {
-            return evaluateBlock(level, pos, logic, visited);
+        if (kind != null) {
+            if (requiredOutputDirection != null && !hasOutputToward(level, pos, requiredOutputDirection)) {
+                return SignalValue.ZERO;
+            }
+            return evaluateBlock(level, pos, kind, visited);
         }
         return SignalValue.ZERO;
     }
 
-    private static SignalValue evaluateBlock(Level level, BlockPos pos, LogicBlockEntity logic, Set<BlockPos> visited) {
-        return switch (logic.kind()) {
-            case SCALAR_CONSTANT -> SignalValue.scalar(logic.scalarValue());
-            case SCALAR_ADD -> SignalValue.scalar(input(level, pos, logic, "left", visited).asScalar() + input(level, pos, logic, "right", visited).asScalar());
-            case SCALAR_COMPARATOR -> SignalValue.bool(logic.comparatorOperator().test(input(level, pos, logic, "left", visited).asScalar(), input(level, pos, logic, "right", visited).asScalar()));
-            case BOOLEAN_AND -> SignalValue.bool(input(level, pos, logic, "left", visited).asBoolean() && input(level, pos, logic, "right", visited).asBoolean());
-            case BOOLEAN_NOT -> SignalValue.bool(!input(level, pos, logic, "value", visited).asBoolean());
-            case BOOLEAN_CONDITIONAL -> SignalValue.scalar(input(level, pos, logic, "condition", visited).asBoolean() ? input(level, pos, logic, "ifTrue", visited).asScalar() : input(level, pos, logic, "ifFalse", visited).asScalar());
+    private static boolean hasOutputToward(Level level, BlockPos pos, Direction direction) {
+        for (PortSpec spec : LogicState.ports(level, pos)) {
+            if (spec.output() && spec.direction() == direction) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static SignalValue evaluateBlock(Level level, BlockPos pos, LogicBlockKind kind, Set<BlockPos> visited) {
+        return switch (kind) {
+            case SCALAR_CONSTANT -> SignalValue.scalar(LogicState.scalarValue(level, pos));
+            case SCALAR_COMPARATOR -> SignalValue.bool(LogicState.comparatorOperator(level, pos).test(input(level, pos, kind, "left", visited).asScalar(), input(level, pos, kind, "right", visited).asScalar()));
+            case SCALAR_ADD -> SignalValue.scalar(input(level, pos, kind, "left", visited).asScalar() + input(level, pos, kind, "right", visited).asScalar());
+            case BOOLEAN_AND -> SignalValue.bool(input(level, pos, kind, "left", visited).asBoolean() && input(level, pos, kind, "right", visited).asBoolean());
+            case BOOLEAN_NOT -> SignalValue.bool(!input(level, pos, kind, "value", visited).asBoolean());
+            case BOOLEAN_CONDITIONAL -> SignalValue.scalar(input(level, pos, kind, "condition", visited).asBoolean() ? input(level, pos, kind, "ifTrue", visited).asScalar() : input(level, pos, kind, "ifFalse", visited).asScalar());
             case REDSTONE_IMPORTER -> SignalValue.scalar(level.getBestNeighborSignal(pos));
-            case ROM_POWERING_GATE -> evaluateRom(level, pos, logic, visited);
-            case REDSTONE_EXPORTER -> SignalValue.scalar(input(level, pos, logic, "value", visited).asScalar());
-            case EXTERNAL_PORT -> logic.externalOutput() ? input(level, pos, logic, "value", visited) : SignalValue.ZERO;
+            case ROM_POWERING_GATE -> evaluateRom(level, pos, kind, visited);
+            case REDSTONE_EXPORTER -> SignalValue.scalar(input(level, pos, kind, "value", visited).asScalar());
+            case EXTERNAL_PORT -> LogicState.externalOutput(level, pos) ? input(level, pos, kind, "value", visited) : SignalValue.ZERO;
             default -> SignalValue.ZERO;
         };
     }
 
-    private static SignalValue evaluateRom(Level level, BlockPos pos, LogicBlockEntity logic, Set<BlockPos> visited) {
-        if (logic.romProgram() == null) {
+    private static SignalValue evaluateRom(Level level, BlockPos pos, LogicBlockKind kind, Set<BlockPos> visited) {
+        RomProgram romProgram = LogicState.romProgram(level, pos);
+        if (romProgram == null) {
             return SignalValue.ZERO;
         }
         Map<String, SignalValue> inputs = new HashMap<>();
-        if (!logic.romProgram().inputs().isEmpty()) {
-            inputs.put(logic.romProgram().inputs().get(0), input(level, pos, logic, "input0", visited));
+        if (!romProgram.inputs().isEmpty()) {
+            inputs.put(romProgram.inputs().get(0), input(level, pos, kind, "input0", visited));
         }
-        Map<String, SignalValue> values = CircuitEvaluator.evaluate(logic.romProgram(), inputs);
-        if (logic.romProgram().outputs().isEmpty()) {
+        Map<String, SignalValue> values = CircuitEvaluator.evaluate(romProgram, inputs);
+        if (romProgram.outputs().isEmpty()) {
             return SignalValue.ZERO;
         }
-        return values.getOrDefault(logic.romProgram().outputs().get(0), SignalValue.ZERO);
+        return values.getOrDefault(romProgram.outputs().get(0), SignalValue.ZERO);
     }
 
-    private static SignalValue input(Level level, BlockPos pos, LogicBlockEntity logic, String name, Set<BlockPos> visited) {
-        for (PortSpec spec : Ports.specs(logic)) {
+    private static SignalValue input(Level level, BlockPos pos, LogicBlockKind kind, String name, Set<BlockPos> visited) {
+        for (PortSpec spec : LogicState.ports(level, pos)) {
             if (!spec.output() && spec.name().equals(name)) {
-                return valueAt(level, pos.relative(spec.direction()), new HashSet<>(visited));
+                return valueAt(level, pos.relative(spec.direction()), spec.direction().getOpposite(), new HashSet<>(visited));
             }
         }
-        if (logic.kind() == LogicBlockKind.BOOLEAN_AND || logic.kind() == LogicBlockKind.BOOLEAN_NOT || name.equals("condition")) {
+        if (kind == LogicBlockKind.BOOLEAN_AND || kind == LogicBlockKind.BOOLEAN_NOT || name.equals("condition")) {
             return SignalValue.FALSE;
         }
         return SignalValue.ZERO;
