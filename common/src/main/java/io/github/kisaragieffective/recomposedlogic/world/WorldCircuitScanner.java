@@ -11,8 +11,10 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
@@ -63,9 +65,11 @@ public final class WorldCircuitScanner {
             CircuitNode node = graph.node(id(entry.getKey()));
             for (PortSpec spec : LogicState.ports(level, entry.getKey())) {
                 if (!spec.output()) {
-                    PortRef source = findSource(level, entry.getKey().relative(spec.direction()), entry.getKey(), entities);
-                    if (source != null) {
-                        node.connect(spec.name(), source);
+                    List<PortRef> sources = findSources(level, entry.getKey().relative(spec.direction()), entry.getKey(), entities);
+                    if (sources.size() == 1) {
+                        node.connect(spec.name(), sources.getFirst());
+                    } else if (sources.size() > 1) {
+                        graph.diagnostics().add("Multiple drivers for " + node.id() + "." + spec.name() + ": " + sources);
                     }
                 }
             }
@@ -95,19 +99,20 @@ public final class WorldCircuitScanner {
         return kind.nodeKind();
     }
 
-    private static PortRef findSource(Level level, BlockPos start, BlockPos consumerPos, Map<BlockPos, LogicBlockKind> entities) {
+    private static List<PortRef> findSources(Level level, BlockPos start, BlockPos consumerPos, Map<BlockPos, LogicBlockKind> entities) {
+        List<PortRef> sources = new ArrayList<>();
         Set<BlockPos> visited = new HashSet<>();
         Queue<SearchStep> queue = new ArrayDeque<>();
         queue.add(new SearchStep(start, consumerPos));
         while (!queue.isEmpty()) {
             SearchStep step = queue.remove();
             BlockPos pos = step.pos();
-            if (!visited.add(pos)) {
-                continue;
-            }
             LogicBlockKind kind = LogicState.kind(level, pos);
             if (kind != null) {
                 if (kind == LogicBlockKind.PIN_CABLE || kind == LogicBlockKind.JUNCTION) {
+                    if (!visited.add(pos)) {
+                        continue;
+                    }
                     for (Direction direction : Direction.values()) {
                         queue.add(new SearchStep(pos.relative(direction), pos));
                     }
@@ -117,13 +122,16 @@ public final class WorldCircuitScanner {
                     Direction outputDirection = directionTo(pos, step.previous());
                     for (PortSpec port : LogicState.ports(level, pos)) {
                         if (port.output() && port.direction() == outputDirection) {
-                            return new PortRef(id(pos), port.name());
+                            PortRef source = new PortRef(id(pos), port.name());
+                            if (!sources.contains(source)) {
+                                sources.add(source);
+                            }
                         }
                     }
                 }
             }
         }
-        return null;
+        return sources;
     }
 
     private static Direction directionTo(BlockPos from, BlockPos to) {

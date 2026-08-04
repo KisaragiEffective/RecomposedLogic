@@ -109,6 +109,87 @@ public final class RecomposedLogicGameTest implements FabricGameTest {
         helper.succeed();
     }
 
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
+    public void scannerRejectsCombinationalCableLoop(GameTestHelper helper) {
+        BlockPos origin = new BlockPos(2, 0, 2);
+        BlockPos add = new BlockPos(3, 1, 3);
+
+        helper.setBlock(origin, ModBlocks.CIRCUIT_ORIGIN);
+        helper.setBlock(add, ModBlocks.SCALAR_ADD);
+        scalar(helper, new BlockPos(3, 1, 2), 0.0);
+        helper.setBlock(new BlockPos(2, 1, 3), ModBlocks.PIN_CABLE);
+        helper.setBlock(new BlockPos(2, 1, 4), ModBlocks.PIN_CABLE);
+        helper.setBlock(new BlockPos(3, 1, 4), ModBlocks.PIN_CABLE);
+        helper.setBlock(new BlockPos(4, 1, 4), ModBlocks.PIN_CABLE);
+        helper.setBlock(new BlockPos(4, 1, 3), ModBlocks.PIN_CABLE);
+        externalPort(helper, new BlockPos(5, 1, 3), true);
+
+        CompileResult result = WorldCircuitScanner.scan(helper.getLevel(), helper.absolutePos(origin));
+
+        helper.assertTrue(!result.success(), "cable loop should fail compilation");
+        helper.assertTrue(result.diagnostics().stream().anyMatch(diagnostic -> diagnostic.contains("Cycle detected")),
+                String.join(", ", result.diagnostics()));
+        helper.succeed();
+    }
+
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
+    public void scannerRejectsMultipleDriversOnOneInputNetwork(GameTestHelper helper) {
+        BlockPos origin = new BlockPos(2, 0, 2);
+        BlockPos inputCable = new BlockPos(2, 1, 3);
+        BlockPos add = new BlockPos(3, 1, 3);
+
+        helper.setBlock(origin, ModBlocks.CIRCUIT_ORIGIN);
+        scalar(helper, inputCable.below(), 7.0);
+        scalar(helper, inputCable.above(), 9.0);
+        helper.setBlock(inputCable, ModBlocks.PIN_CABLE);
+        helper.setBlock(add, ModBlocks.SCALAR_ADD);
+        scalar(helper, new BlockPos(3, 1, 2), 1.0);
+        helper.setBlock(new BlockPos(4, 1, 3), ModBlocks.PIN_CABLE);
+        externalPort(helper, new BlockPos(5, 1, 3), true);
+
+        CompileResult result = WorldCircuitScanner.scan(helper.getLevel(), helper.absolutePos(origin));
+
+        helper.assertTrue(!result.success(), "multiple drivers should fail compilation");
+        helper.assertTrue(result.diagnostics().stream().anyMatch(diagnostic -> diagnostic.contains("Multiple drivers")),
+                String.join(", ", result.diagnostics()));
+        helper.succeed();
+    }
+
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
+    public void runtimeCableLoopOutsideCompilationReturnsZeroInsteadOfFailing(GameTestHelper helper) {
+        BlockPos add = new BlockPos(3, 1, 3);
+        BlockPos exporter = new BlockPos(4, 1, 3);
+
+        helper.setBlock(add, ModBlocks.SCALAR_ADD);
+        scalar(helper, new BlockPos(3, 1, 2), 0.0);
+        helper.setBlock(new BlockPos(2, 1, 3), ModBlocks.PIN_CABLE);
+        helper.setBlock(new BlockPos(2, 1, 4), ModBlocks.PIN_CABLE);
+        helper.setBlock(new BlockPos(3, 1, 4), ModBlocks.PIN_CABLE);
+        helper.setBlock(new BlockPos(4, 1, 4), ModBlocks.PIN_CABLE);
+        helper.setBlock(exporter, ModBlocks.REDSTONE_EXPORTER);
+
+        double value = WorldRuntimeEvaluator.scalarInput(helper.getLevel(), helper.absolutePos(exporter), "value");
+
+        helper.assertValueEqual(value, 0.0, "runtime cable loop outside compilation should evaluate through visited guard");
+        helper.succeed();
+    }
+
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
+    public void runtimeMultipleDriversOutsideCompilationUseFirstNonZeroCableValue(GameTestHelper helper) {
+        BlockPos cable = new BlockPos(2, 1, 1);
+        BlockPos exporter = new BlockPos(3, 1, 1);
+
+        scalar(helper, cable.below(), 7.0);
+        scalar(helper, cable.above(), 9.0);
+        helper.setBlock(cable, ModBlocks.PIN_CABLE);
+        helper.setBlock(exporter, ModBlocks.REDSTONE_EXPORTER);
+
+        double value = WorldRuntimeEvaluator.scalarInput(helper.getLevel(), helper.absolutePos(exporter), "value");
+
+        helper.assertValueEqual(value, 7.0, "runtime cable lookup should keep its first non-zero value behavior");
+        helper.succeed();
+    }
+
     private static BlockPos addOneCircuit(GameTestHelper helper) {
         BlockPos origin = new BlockPos(2, 0, 2);
         helper.setBlock(origin, ModBlocks.CIRCUIT_ORIGIN);

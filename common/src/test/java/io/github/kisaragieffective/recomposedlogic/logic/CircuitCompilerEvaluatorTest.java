@@ -47,6 +47,104 @@ class CircuitCompilerEvaluatorTest {
     }
 
     @Test
+    void scalarInputsRejectBooleanSources() {
+        CircuitGraph graph = new CircuitGraph();
+        graph.add(constant("one", 1.0));
+        CircuitNode comparator = node("isOne", NodeKind.SCALAR_COMPARATOR);
+        comparator.connect("left", new PortRef("one", "value"));
+        comparator.connect("right", new PortRef("one", "value"));
+        graph.add(comparator);
+
+        CircuitNode add = node("add", NodeKind.SCALAR_ADD);
+        add.connect("left", new PortRef("isOne", "value"));
+        add.connect("right", new PortRef("one", "value"));
+        graph.add(add);
+
+        CircuitNode output = node("output", NodeKind.EXTERNAL_OUTPUT);
+        output.connect("value", new PortRef("add", "value"));
+        graph.add(output);
+
+        CompileResult result = CircuitCompiler.compile(graph, 4);
+
+        assertSingleDiagnostic(result, "Type mismatch at add.left: expected SCALAR, got BOOLEAN");
+    }
+
+    @Test
+    void booleanInputsRejectScalarSources() {
+        CircuitGraph graph = new CircuitGraph();
+        graph.add(constant("one", 1.0));
+        graph.add(constant("two", 2.0));
+
+        CircuitNode and = node("and", NodeKind.BOOLEAN_AND);
+        and.connect("left", new PortRef("one", "value"));
+        and.connect("right", new PortRef("two", "value"));
+        graph.add(and);
+
+        CircuitNode conditional = node("conditional", NodeKind.BOOLEAN_CONDITIONAL);
+        conditional.connect("condition", new PortRef("and", "value"));
+        conditional.connect("ifTrue", new PortRef("one", "value"));
+        conditional.connect("ifFalse", new PortRef("two", "value"));
+        graph.add(conditional);
+
+        CircuitNode output = node("output", NodeKind.EXTERNAL_OUTPUT);
+        output.connect("value", new PortRef("conditional", "value"));
+        graph.add(output);
+
+        CompileResult result = CircuitCompiler.compile(graph, 5);
+
+        assertFalse(result.success());
+        assertEquals(2, result.diagnostics().size());
+        assertTrue(result.diagnostics().contains("Type mismatch at and.left: expected BOOLEAN, got SCALAR"));
+        assertTrue(result.diagnostics().contains("Type mismatch at and.right: expected BOOLEAN, got SCALAR"));
+    }
+
+    @Test
+    void conditionalConditionRejectsScalarSource() {
+        CircuitGraph graph = new CircuitGraph();
+        graph.add(constant("one", 1.0));
+        graph.add(constant("two", 2.0));
+
+        CircuitNode conditional = node("conditional", NodeKind.BOOLEAN_CONDITIONAL);
+        conditional.connect("condition", new PortRef("one", "value"));
+        conditional.connect("ifTrue", new PortRef("one", "value"));
+        conditional.connect("ifFalse", new PortRef("two", "value"));
+        graph.add(conditional);
+
+        CircuitNode output = node("output", NodeKind.EXTERNAL_OUTPUT);
+        output.connect("value", new PortRef("conditional", "value"));
+        graph.add(output);
+
+        CompileResult result = CircuitCompiler.compile(graph, 4);
+
+        assertSingleDiagnostic(result, "Type mismatch at conditional.condition: expected BOOLEAN, got SCALAR");
+    }
+
+    @Test
+    void combinationalLoopsAreRejected() {
+        CircuitGraph graph = new CircuitGraph();
+        graph.add(constant("one", 1.0));
+
+        CircuitNode first = node("first", NodeKind.SCALAR_ADD);
+        first.connect("left", new PortRef("second", "value"));
+        first.connect("right", new PortRef("one", "value"));
+        graph.add(first);
+
+        CircuitNode second = node("second", NodeKind.SCALAR_ADD);
+        second.connect("left", new PortRef("first", "value"));
+        second.connect("right", new PortRef("one", "value"));
+        graph.add(second);
+
+        CircuitNode output = node("output", NodeKind.EXTERNAL_OUTPUT);
+        output.connect("value", new PortRef("first", "value"));
+        graph.add(output);
+
+        CompileResult result = CircuitCompiler.compile(graph, 4);
+
+        assertFalse(result.success());
+        assertTrue(result.diagnostics().contains("Cycle detected at first"));
+    }
+
+    @Test
     void conditionalConvertsBooleanChoiceToScalarOutput() {
         CircuitGraph graph = new CircuitGraph();
         graph.add(externalInput("input"));
@@ -149,5 +247,11 @@ class CircuitCompilerEvaluatorTest {
     private static RomProgram requireProgram(CompileResult result) {
         assertTrue(result.success(), () -> String.join(", ", result.diagnostics()));
         return result.program();
+    }
+
+    private static void assertSingleDiagnostic(CompileResult result, String diagnostic) {
+        assertFalse(result.success());
+        assertEquals(1, result.diagnostics().size());
+        assertEquals(diagnostic, result.diagnostics().getFirst());
     }
 }
