@@ -17,6 +17,9 @@
   "entrypoints": {
     "main": [
       "io.github.kisaragieffective.recomposedlogic.Recomposedlogic"
+    ],
+    "client": [
+      "io.github.kisaragieffective.recomposedlogic.RecomposedlogicClient"
     ]
   },
   "mixins": [

@@ -7,6 +7,7 @@ import io.github.kisaragieffective.recomposedlogic.world.block.BooleanNotBlock;
 import io.github.kisaragieffective.recomposedlogic.world.block.CircuitOriginBlock;
 import io.github.kisaragieffective.recomposedlogic.world.block.CircuitScannerBlock;
 import io.github.kisaragieffective.recomposedlogic.world.block.ExternalPortBlock;
+import io.github.kisaragieffective.recomposedlogic.world.block.InternalJunctionBlock;
 import io.github.kisaragieffective.recomposedlogic.world.block.JunctionBlock;
 import io.github.kisaragieffective.recomposedlogic.world.block.PinCableBlock;
 import io.github.kisaragieffective.recomposedlogic.world.block.RedstoneExporterBlock;
@@ -30,8 +31,12 @@ import java.util.function.Function;
 
 public final class ModBlocks {
     public static final Map<String, Block> ALL = new LinkedHashMap<>();
+    public static final Map<String, Block> ITEM_BLOCKS = new LinkedHashMap<>();
 
     public static final Block PIN_CABLE = block("pin_cable", PinCableBlock::new);
+    public static final Block DYED_PIN_CABLE = internalBlock("dyed_pin_cable", PinCableBlock::new);
+    public static final Block UNDYED_INTERNAL_JUNCTION = internalBlock("undyed_internal_junction", InternalJunctionBlock::new);
+    public static final Block DYED_INTERNAL_JUNCTION = internalBlock("dyed_internal_junction", InternalJunctionBlock::new);
     public static final Block JUNCTION = block("junction", JunctionBlock::new);
     public static final Block SCALAR_CONSTANT = block("scalar_constant", ScalarConstantBlock::new);
     public static final Block SCALAR_ADD = block("scalar_add", ScalarAddBlock::new);
@@ -55,7 +60,18 @@ public final class ModBlocks {
     }
 
     private static Block block(String name, Function<BlockBehaviour.Properties, Block> factory) {
-        Block block = factory.apply(BlockBehaviour.Properties.of().mapColor(MapColor.METAL).strength(1.5F).sound(SoundType.METAL));
+        BlockBehaviour.Properties properties = BlockBehaviour.Properties.of().mapColor(MapColor.METAL).strength(1.5F).sound(SoundType.METAL);
+        if (name.equals("pin_cable")) {
+            properties = properties.noOcclusion();
+        }
+        Block block = factory.apply(properties);
+        ALL.put(name, block);
+        ITEM_BLOCKS.put(name, block);
+        return block;
+    }
+
+    private static Block internalBlock(String name, Function<BlockBehaviour.Properties, Block> factory) {
+        Block block = factory.apply(BlockBehaviour.Properties.of().mapColor(MapColor.METAL).strength(1.5F).sound(SoundType.METAL).noOcclusion());
         ALL.put(name, block);
         return block;
     }

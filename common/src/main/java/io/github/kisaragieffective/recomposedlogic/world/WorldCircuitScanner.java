@@ -6,8 +6,10 @@ import io.github.kisaragieffective.recomposedlogic.logic.CircuitNode;
 import io.github.kisaragieffective.recomposedlogic.logic.CompileResult;
 import io.github.kisaragieffective.recomposedlogic.logic.NodeKind;
 import io.github.kisaragieffective.recomposedlogic.logic.PortRef;
+import io.github.kisaragieffective.recomposedlogic.world.block.PinCableBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.Level;
 
 import java.util.ArrayDeque;
@@ -101,20 +103,44 @@ public final class WorldCircuitScanner {
 
     private static List<PortRef> findSources(Level level, BlockPos start, BlockPos consumerPos, Map<BlockPos, LogicBlockKind> entities) {
         List<PortRef> sources = new ArrayList<>();
-        Set<BlockPos> visited = new HashSet<>();
+        Set<CableVisit> visited = new HashSet<>();
         Queue<SearchStep> queue = new ArrayDeque<>();
-        queue.add(new SearchStep(start, consumerPos));
+        LogicBlockKind startKind = LogicState.kind(level, start);
+        if (startKind == LogicBlockKind.PIN_CABLE || startKind == LogicBlockKind.JUNCTION) {
+            PinCableBlock.TraversalConnection startConnection = PinCableBlock.portTraversalStart(level, start);
+            if (!startConnection.connected()) {
+                return sources;
+            }
+            queue.add(new SearchStep(start, consumerPos, startConnection.color()));
+        } else {
+            queue.add(new SearchStep(start, consumerPos, null));
+        }
         while (!queue.isEmpty()) {
             SearchStep step = queue.remove();
             BlockPos pos = step.pos();
             LogicBlockKind kind = LogicState.kind(level, pos);
             if (kind != null) {
                 if (kind == LogicBlockKind.PIN_CABLE || kind == LogicBlockKind.JUNCTION) {
-                    if (!visited.add(pos)) {
+                    if (!visited.add(new CableVisit(pos, step.color()))) {
                         continue;
                     }
                     for (Direction direction : Direction.values()) {
-                        queue.add(new SearchStep(pos.relative(direction), pos));
+                        BlockPos next = pos.relative(direction);
+                        LogicBlockKind nextKind = LogicState.kind(level, next);
+                        DyeColor nextColor = step.color();
+                        if (nextKind == LogicBlockKind.PIN_CABLE || nextKind == LogicBlockKind.JUNCTION) {
+                            PinCableBlock.TraversalConnection connection = PinCableBlock.traversalConnection(level, pos, next, step.color());
+                            if (!connection.connected()) {
+                                continue;
+                            }
+                            nextColor = connection.color();
+                        } else {
+                            PinCableBlock.TraversalConnection connection = PinCableBlock.portTraversalStart(level, pos);
+                            if (!connection.connected() || (step.color() != null && connection.color() != null && step.color() != connection.color())) {
+                                continue;
+                            }
+                        }
+                        queue.add(new SearchStep(next, pos, nextColor));
                     }
                     continue;
                 }
@@ -147,6 +173,9 @@ public final class WorldCircuitScanner {
         return pos.getX() + "," + pos.getY() + "," + pos.getZ();
     }
 
-    private record SearchStep(BlockPos pos, BlockPos previous) {
+    private record SearchStep(BlockPos pos, BlockPos previous, DyeColor color) {
+    }
+
+    private record CableVisit(BlockPos pos, DyeColor color) {
     }
 }

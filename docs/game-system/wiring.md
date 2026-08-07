@@ -13,6 +13,8 @@ RecomposedLogicの各ブロックはワイヤーを結線することにより�
 
 なお、複数色状態のPin Cable Blockに同じ色の*Dyed* Pin Cableを設置しようとしても何も起こらず、アイテムも消費しない。
 
+単色状態のPin Cable Blockに同じ色の*Dyed* Pin Cableを使った場合は、選択した面の隣接位置が置換可能であれば、そこへ同色のPin Cable Blockを設置する。これは通常のケーブル延長操作として扱う。
+
 ## Pin Cable Block
 
 通行データ型: RecomposedLogic::SingleChannel&lt;?&gt;
@@ -126,6 +128,8 @@ Pin Cableは`2 × 2 × 16`の直方体モデルを使用する。
 
 各色はブロック断面内の固有位置へ描画し、互いに重ならないようにする。
 
+単色のColored Pin CableがUndyed Pin CableまたはUndyed Internal Junction Blockへ接続する場合は、中心の無色ピンと色固有スロットを結ぶ曲線アダプタとして描画する。アダプタは接続方向の6方向すべてへ回転し、連続するColored Pin Cable側へ2モデル単位だけ延長する。
+
 ### データ管理
 
 #### BlockState
@@ -138,12 +142,9 @@ Pin Cableは`2 × 2 × 16`の直方体モデルを使用する。
 
 #### BlockEntity
 
-色ごとの接続情報も含め、接続情報を保持する。
+染色済みケーブルの保持色集合を管理する。接続方向は保持せず、周囲のブロック状態から都度再計算する。
 
 - 保持中の色
-- 色ごとの接続方向
-- ジャンクション内部の接続情報
-- その他ランタイム情報
 
 #### 描画
 
@@ -180,6 +181,8 @@ axisプロパティは持たない。
 判定はブロック更新時・設置時・破壊時に再計算する。
 
 Dyed Internal Junction Blockでは、同じ色で接続された全方向を同一ネットワークとして扱い、異なる色同士は接続しない。
+
+隣接する染色ケーブルまたはDyed Internal Junction Blockが保持する色は、Dyed Internal Junction Blockへ取り込まれる。取り込まれた色は、その隣接ブロックとの接続が当該色だけの終端であっても保持する。これにより、複数色ケーブルがカーブまたは分岐する地点では、各色が対応するピンへ接続できる。
 
 以下に状態の例を示す。
 * `-` 及び `|`: 便宜的にRed Pin Cable
@@ -268,8 +271,7 @@ ROMへコンパイルする組み合わせ回路では、出力が状態要素�
 ## Appendix A. 実装上の補足
 
 Pin Cable Blockは無色・染色を問わずBlockEntityを持つ。
-BlockEntityはケーブル種別と保持色集合を永続化する。
-軸、接続方向、内部接続情報は周囲のブロック状態から再計算する。
+染色済みのBlockEntityは保持色集合を永続化する。無色・染色の種別はブロック種別で決まり、軸と接続方向は周囲のブロック状態から再計算する。
 
 通常のPin Cable Blockとして存在できるのは、保持している**全色が**同一軸上の直線として表現できる場合に限る。
 それ以外の場合は対応するInternal Junction Blockへ変換する。
@@ -297,3 +299,22 @@ Pin Cable Blockおよび両Internal Junction BlockはBlockEntityを持つ。
 色別除去操作は今回の実装範囲外とする。
 
 Channel Selector BlockおよびChannel Injector Blockは今回の実装範囲外とする。
+
+## Appendix C. 仕様とテストの対応
+
+| 仕様 | テスト | 種別 |
+|---|---|---|
+| 無色と単色は接続し、無色と複数色は接続しない | `undyedCableConnectsOnlyToSingleColoredCable` | GameTest |
+| 染色ケーブルは共通する色だけで接続する | `multiColorCablesConnectOnlyThroughSharedColors`、`scannerDoesNotConnectDifferentDyedCableColors` | GameTest |
+| 異なる色はDyed Junction内で混線しない | `runtimeDoesNotLeakSignalBetweenColorsInDyedJunction`、`scannerDoesNotConnectAcrossDifferentColorsInDyedJunction` | GameTest |
+| 同色はDyed Junctionを通過する | `runtimeKeepsSameColorConnectedThroughDyedJunction` | GameTest |
+| カーブ・分岐・立体交差は対応するJunctionへ変換する | `bentPinCableBecomesInternalJunction`、`sameColorDyedBranchBecomesInternalJunction`、`differentDyedColorsCanCrossAsInternalJunction` | GameTest |
+| 隣接Dyed Junctionおよび追加色は色ごとに接続する | `adjacentDyedJunctionsConnectEachSharedColor`、`dyedJunctionRetainsAdditionalColorFromAdjacentCable`、`newlyCreatedDyedJunctionCapturesAdjacentCableColors` | GameTest |
+| 分岐解消後は直線ケーブルへ戻る | `junctionReturnsToStraightCableAfterBranchRemoval` | GameTest |
+| 複数色を同一座標へ保持できる | `dyedCableBlockEntityCanHoldMultipleColors` | GameTest |
+| 複数色状態へ同じ色は追加・消費・隣接設置しない | `duplicateColorDoesNotPlaceOrConsumeOnMultiColorCable` | GameTest |
+| 単色状態へ同じ色を使うと対象面の隣接位置へ延長配置する | `duplicateColorExtendsSingleColorCable` | GameTest |
+| 無色ケーブルへ染色ケーブルは重ねられない | `dyedCableCannotBePlacedOnUndyedCable` | GameTest |
+| 複数色ケーブルを破壊すると保持色ごとのアイテムをドロップする | `multiColorCableDropContentsIncludesEveryHeldColor` | GameTest |
+
+描画モデルのピン位置・太さはクライアント側のBERによる見た目であり、現行の自動GameTestでは検証できない。リソースモデルを変更した場合は、X/Y/Zの各軸と6方向の接続をクライアント上で確認する。

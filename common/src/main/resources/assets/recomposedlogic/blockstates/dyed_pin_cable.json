@@ -1,0 +1,15 @@
+{
+  "variants": {
+    "axis=x": {
+      "model": "recomposedlogic:block/dyed_pin_cable",
+      "y": 90
+    },
+    "axis=y": {
+      "model": "recomposedlogic:block/dyed_pin_cable",
+      "x": 90
+    },
+    "axis=z": {
+      "model": "recomposedlogic:block/dyed_pin_cable"
+    }
+  }
+}

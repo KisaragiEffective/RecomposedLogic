@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "recomposedlogic:block/dyed_internal_junction"
+    }
+  }
+}
