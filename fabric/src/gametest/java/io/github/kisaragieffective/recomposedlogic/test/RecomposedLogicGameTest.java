@@ -1,13 +1,6 @@
 package io.github.kisaragieffective.recomposedlogic.test;
 
-import io.github.kisaragieffective.recomposedlogic.logic.CircuitCompiler;
-import io.github.kisaragieffective.recomposedlogic.logic.CircuitGraph;
-import io.github.kisaragieffective.recomposedlogic.logic.CircuitNode;
-import io.github.kisaragieffective.recomposedlogic.logic.CompileResult;
-import io.github.kisaragieffective.recomposedlogic.logic.NodeKind;
-import io.github.kisaragieffective.recomposedlogic.logic.PortRef;
-import io.github.kisaragieffective.recomposedlogic.logic.RomProgram;
-import io.github.kisaragieffective.recomposedlogic.logic.SignalValue;
+import io.github.kisaragieffective.recomposedlogic.logic.*;
 import io.github.kisaragieffective.recomposedlogic.registry.ModBlocks;
 import io.github.kisaragieffective.recomposedlogic.registry.ModItems;
 import io.github.kisaragieffective.recomposedlogic.world.WorldCircuitScanner;
@@ -63,7 +56,7 @@ public final class RecomposedLogicGameTest implements FabricGameTest {
         helper.assertValueEqual(program.outputs().size(), 1, "add-one ROM should have one output");
         helper.assertValueEqual(program.instructions().size(), 4, "add-one ROM should compile input, constant, add, output");
         double value = io.github.kisaragieffective.recomposedlogic.logic.CircuitEvaluator
-                .evaluate(program, Map.of(program.inputs().getFirst(), SignalValue.scalar(5.0)))
+                .evaluate(program, Map.of(program.inputs().getFirst(), new ScalarSignal(5.0)))
                 .get(program.outputs().getFirst())
                 .asScalar();
         helper.assertValueEqual(value, 6.0, "compiled add-one ROM should return input + 1");
@@ -112,7 +105,7 @@ public final class RecomposedLogicGameTest implements FabricGameTest {
                 "recompiled ROM should contain a ROM instruction");
 
         double value = io.github.kisaragieffective.recomposedlogic.logic.CircuitEvaluator
-                .evaluate(addTwo, Map.of(addTwo.inputs().getFirst(), SignalValue.scalar(3.0)))
+                .evaluate(addTwo, Map.of(addTwo.inputs().getFirst(), new ScalarSignal(3.0)))
                 .get(addTwo.outputs().getFirst())
                 .asScalar();
         helper.assertValueEqual(value, 5.0, "ROM containing add-one plus Add(+1) should return input + 2");
@@ -146,7 +139,7 @@ public final class RecomposedLogicGameTest implements FabricGameTest {
 
         RomProgram program = requireProgram(helper, WorldCircuitScanner.scan(helper.getLevel(), helper.absolutePos(origin)));
         double value = io.github.kisaragieffective.recomposedlogic.logic.CircuitEvaluator
-                .evaluate(program, Map.of(program.inputs().getFirst(), SignalValue.scalar(5.0)))
+                .evaluate(program, Map.of(program.inputs().getFirst(), new ScalarSignal(5.0)))
                 .get(program.outputs().getFirst())
                 .asScalar();
 

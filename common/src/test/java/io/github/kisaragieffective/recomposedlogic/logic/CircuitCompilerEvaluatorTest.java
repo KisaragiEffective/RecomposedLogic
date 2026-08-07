@@ -13,7 +13,7 @@ class CircuitCompilerEvaluatorTest {
     void scalarAddCanBeCompiledAndEvaluatedThroughExternalPorts() {
         RomProgram program = compileAddOneProgram();
 
-        Map<String, SignalValue> values = CircuitEvaluator.evaluate(program, Map.of("input", SignalValue.scalar(5.0)));
+        Map<String, SignalValue> values = CircuitEvaluator.evaluate(program, Map.of("input", new ScalarSignal(5.0)));
 
         assertEquals(6.0, values.get("output").asScalar());
         assertEquals(4, program.instructions().size());
@@ -170,8 +170,8 @@ class CircuitCompilerEvaluatorTest {
 
         RomProgram program = requireProgram(CircuitCompiler.compile(graph, 5));
 
-        assertEquals(8.0, CircuitEvaluator.evaluate(program, Map.of("input", SignalValue.scalar(1.0))).get("output").asScalar());
-        assertEquals(3.0, CircuitEvaluator.evaluate(program, Map.of("input", SignalValue.scalar(0.0))).get("output").asScalar());
+        assertEquals(8.0, CircuitEvaluator.evaluate(program, Map.of("input", new ScalarSignal(1.0))).get("output").asScalar());
+        assertEquals(3.0, CircuitEvaluator.evaluate(program, Map.of("input", new ScalarSignal(0.0))).get("output").asScalar());
     }
 
     @Test
@@ -213,7 +213,7 @@ class CircuitCompilerEvaluatorTest {
 
         RomProgram addTwo = requireProgram(CircuitCompiler.compile(graph, 6));
 
-        assertEquals(5.0, CircuitEvaluator.evaluate(addTwo, Map.of("input", SignalValue.scalar(3.0))).get("output").asScalar());
+        assertEquals(5.0, CircuitEvaluator.evaluate(addTwo, Map.of("input", new ScalarSignal(3.0))).get("output").asScalar());
     }
 
     private static RomProgram compileAddOneProgram() {

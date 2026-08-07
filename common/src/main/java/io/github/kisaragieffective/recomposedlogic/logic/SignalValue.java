@@ -1,35 +1,19 @@
 package io.github.kisaragieffective.recomposedlogic.logic;
 
-public record SignalValue(SignalType type, double scalar, boolean bool) {
-    public static final SignalValue FALSE = bool(false);
-    public static final SignalValue TRUE = bool(true);
-    public static final SignalValue ZERO = scalar(0.0);
+public sealed interface SignalValue permits BooleanSignal, ScalarSignal {
+    SignalType getType();
 
-    public static SignalValue scalar(double value) {
-        if (!Double.isFinite(value)) {
-            value = 0.0;
+    default double asScalar() {
+        if (this instanceof ScalarSignal scalar) {
+            return scalar.getValue();
         }
-        if (value == 0.0) {
-            value = 0.0;
-        }
-        return new SignalValue(SignalType.SCALAR, value, false);
+        throw new IllegalStateException("Expected scalar, got " + getType());
     }
 
-    public static SignalValue bool(boolean value) {
-        return new SignalValue(SignalType.BOOLEAN, 0.0, value);
-    }
-
-    public double asScalar() {
-        if (type != SignalType.SCALAR) {
-            throw new IllegalStateException("Expected scalar, got " + type);
+    default boolean asBoolean() {
+        if (this instanceof BooleanSignal bool) {
+            return bool.getValue();
         }
-        return scalar;
-    }
-
-    public boolean asBoolean() {
-        if (type != SignalType.BOOLEAN) {
-            throw new IllegalStateException("Expected boolean, got " + type);
-        }
-        return bool;
+        throw new IllegalStateException("Expected boolean, got " + getType());
     }
 }

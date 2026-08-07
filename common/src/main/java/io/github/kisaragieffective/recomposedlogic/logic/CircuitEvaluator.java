@@ -11,14 +11,18 @@ public final class CircuitEvaluator {
         Map<String, SignalValue> values = new HashMap<>(externalInputs);
         for (IrInstruction instruction : program.instructions()) {
             SignalValue value = switch (instruction.kind()) {
-                case SCALAR_CONSTANT -> SignalValue.scalar(instruction.scalarValue());
-                case SCALAR_ADD -> SignalValue.scalar(scalar(values, instruction, "left") + scalar(values, instruction, "right"));
-                case SCALAR_COMPARATOR -> SignalValue.bool(instruction.comparatorOperator().test(scalar(values, instruction, "left"), scalar(values, instruction, "right")));
-                case BOOLEAN_AND -> SignalValue.bool(bool(values, instruction, "left") && bool(values, instruction, "right"));
-                case BOOLEAN_NOT -> SignalValue.bool(!bool(values, instruction, "value"));
-                case BOOLEAN_CONDITIONAL -> SignalValue.scalar(bool(values, instruction, "condition") ? scalar(values, instruction, "ifTrue") : scalar(values, instruction, "ifFalse"));
-                case REDSTONE_IMPORTER, EXTERNAL_INPUT -> values.getOrDefault(instruction.id(), SignalValue.ZERO);
-                case REDSTONE_EXPORTER, EXTERNAL_OUTPUT -> SignalValue.scalar(scalar(values, instruction, "value"));
+                case SCALAR_CONSTANT -> new ScalarSignal(instruction.scalarValue());
+                case SCALAR_ADD ->
+                        new ScalarSignal(scalar(values, instruction, "left") + scalar(values, instruction, "right"));
+                case SCALAR_COMPARATOR ->
+                        BooleanSignal.of(instruction.comparatorOperator().test(scalar(values, instruction, "left"), scalar(values, instruction, "right")));
+                case BOOLEAN_AND ->
+                        BooleanSignal.of(bool(values, instruction, "left") && bool(values, instruction, "right"));
+                case BOOLEAN_NOT -> BooleanSignal.of(!bool(values, instruction, "value"));
+                case BOOLEAN_CONDITIONAL ->
+                        new ScalarSignal(bool(values, instruction, "condition") ? scalar(values, instruction, "ifTrue") : scalar(values, instruction, "ifFalse"));
+                case REDSTONE_IMPORTER, EXTERNAL_INPUT -> values.getOrDefault(instruction.id(), ScalarSignal.ZERO);
+                case REDSTONE_EXPORTER, EXTERNAL_OUTPUT -> new ScalarSignal(scalar(values, instruction, "value"));
                 case ROM -> evaluateRom(instruction, values);
             };
             values.put(instruction.id(), value);
@@ -28,28 +32,28 @@ public final class CircuitEvaluator {
 
     private static SignalValue evaluateRom(IrInstruction instruction, Map<String, SignalValue> values) {
         if (instruction.romProgram() == null) {
-            return SignalValue.ZERO;
+            return ScalarSignal.ZERO;
         }
         Map<String, SignalValue> inputs = new HashMap<>();
         for (int i = 0; i < instruction.inputs().size() && i < instruction.romProgram().inputs().size(); i++) {
             String[] parts = instruction.inputs().get(i).split("=", 2);
             if (parts.length == 2) {
-                inputs.put(instruction.romProgram().inputs().get(i), values.getOrDefault(parts[1], SignalValue.ZERO));
+                inputs.put(instruction.romProgram().inputs().get(i), values.getOrDefault(parts[1], ScalarSignal.ZERO));
             }
         }
         Map<String, SignalValue> evaluated = evaluate(instruction.romProgram(), inputs);
         if (instruction.romProgram().outputs().isEmpty()) {
-            return SignalValue.ZERO;
+            return ScalarSignal.ZERO;
         }
-        return evaluated.getOrDefault(instruction.romProgram().outputs().get(0), SignalValue.ZERO);
+        return evaluated.getOrDefault(instruction.romProgram().outputs().get(0), ScalarSignal.ZERO);
     }
 
     private static double scalar(Map<String, SignalValue> values, IrInstruction instruction, String input) {
-        return values.getOrDefault(source(instruction, input), SignalValue.ZERO).asScalar();
+        return values.getOrDefault(source(instruction, input), ScalarSignal.ZERO).asScalar();
     }
 
     private static boolean bool(Map<String, SignalValue> values, IrInstruction instruction, String input) {
-        return values.getOrDefault(source(instruction, input), SignalValue.FALSE).asBoolean();
+        return values.getOrDefault(source(instruction, input), BooleanSignal.FALSE).asBoolean();
     }
 
     private static String source(IrInstruction instruction, String input) {
