@@ -17,3 +17,7 @@
 * スカラー信号が0.0未満のときはRedstone Strength 0を出力する。
 * スカラー信号が15.0よりも大きいときはRedstone Strength 15を出力する。
 * スカラー信号の小数部分は切り捨てる。
+
+周囲に空気ブロックがあっても出力を更新する。入力は4ゲームティックごとに再評価し、出力強度が変わった場合は隣接ブロックへ通知する。
+
+この挙動と範囲・端数処理はGameTest `redstoneExporterUpdatesOutputWithAirNeighbors`で検証する。

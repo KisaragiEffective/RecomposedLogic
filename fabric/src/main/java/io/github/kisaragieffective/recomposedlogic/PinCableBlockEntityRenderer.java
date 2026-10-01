@@ -320,6 +320,7 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
         }
     }
 
+    // TODO: これは重い。90000 invokesで 7000ms もかかっている。おそらくメモ化するべき。そうでなければ、シェーダーを使うなり何なりでかなりチューニングするべき。
     private static void renderBlockBox(double x, double y, double z, double sizeX, double sizeY, double sizeZ, Block block, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
         poseStack.pushPose();
         poseStack.translate(x, y, z);

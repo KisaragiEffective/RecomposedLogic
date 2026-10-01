@@ -27,6 +27,34 @@ import java.util.Map;
 
 public final class RecomposedLogicGameTest implements FabricGameTest {
     @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
+    public void redstoneExporterUpdatesOutputWithAirNeighbors(GameTestHelper helper) {
+        BlockPos source = new BlockPos(1, 2, 1);
+        BlockPos exporter = new BlockPos(2, 2, 1);
+        BlockPos lamp = new BlockPos(3, 2, 1);
+        scalar(helper, source, 7.9);
+        helper.setBlock(exporter, ModBlocks.REDSTONE_EXPORTER);
+        helper.setBlock(lamp, Blocks.REDSTONE_LAMP);
+
+        helper.runAfterDelay(10, () -> {
+            helper.assertValueEqual(helper.getLevel().getSignal(helper.absolutePos(exporter), Direction.EAST), 7,
+                    "Exporter should floor the input even with air neighbors");
+            helper.assertBlockProperty(lamp, net.minecraft.world.level.block.RedstoneLampBlock.LIT, true);
+            helper.<ScalarConstantBlockEntity>getBlockEntity(source).scalarValue(20.0);
+        });
+        helper.runAfterDelay(20, () -> {
+            helper.assertValueEqual(helper.getLevel().getSignal(helper.absolutePos(exporter), Direction.EAST), 15,
+                    "Exporter should clamp input above 15");
+            helper.<ScalarConstantBlockEntity>getBlockEntity(source).scalarValue(-1.0);
+        });
+        helper.runAfterDelay(30, () -> {
+            helper.assertValueEqual(helper.getLevel().getSignal(helper.absolutePos(exporter), Direction.EAST), 0,
+                    "Exporter should clear its output for negative input");
+            helper.assertBlockProperty(lamp, net.minecraft.world.level.block.RedstoneLampBlock.LIT, false);
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
     public void w2eRuntimeAddOneFromRedstoneImporter(GameTestHelper helper) {
         BlockPos redstone = new BlockPos(1, 1, 1);
         BlockPos importer = new BlockPos(2, 1, 1);

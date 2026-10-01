@@ -150,6 +150,7 @@ public class PinCableBlock extends BaseEntityBlock implements LogicBlockKindProv
         return CODEC;
     }
 
+    // TODO: 596 invokes で 2340 ms
     public static void updateCableAndNeighbors(Level level, BlockPos pos) {
         if (!level.isClientSide) {
             PerLevelNetworkDiagramCache.beginTopologyUpdate(level, pos);

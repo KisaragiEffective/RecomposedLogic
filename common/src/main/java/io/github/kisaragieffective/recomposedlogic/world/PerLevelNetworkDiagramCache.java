@@ -194,6 +194,7 @@ public final class PerLevelNetworkDiagramCache {
                     .forEach(this::remove);
         }
 
+        // TODO: 772 invokes で 2166 ms
         private static TopologySignature topologySignature(Level level, CableNetwork network) {
             Map<CableVisit, VertexSignature> vertices = new HashMap<>();
             for (CableVisit visit : network.edges.keySet()) {
