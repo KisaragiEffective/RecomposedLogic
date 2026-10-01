@@ -3,6 +3,7 @@ package io.github.kisaragieffective.recomposedlogic;
 import io.github.kisaragieffective.recomposedlogic.registry.ModBlockEntities;
 import io.github.kisaragieffective.recomposedlogic.registry.ModBlocks;
 import io.github.kisaragieffective.recomposedlogic.registry.ModItems;
+import io.github.kisaragieffective.recomposedlogic.world.PerLevelNetworkDiagramCache;
 import io.github.kisaragieffective.recomposedlogic.world.entity.CircuitOriginBlockEntity;
 import io.github.kisaragieffective.recomposedlogic.world.entity.CircuitScannerBlockEntity;
 import io.github.kisaragieffective.recomposedlogic.world.entity.DyedInternalJunctionBlockEntity;
@@ -17,6 +18,8 @@ import io.github.kisaragieffective.recomposedlogic.world.entity.ScalarConstantBl
 import io.github.kisaragieffective.recomposedlogic.world.entity.UndyedInternalJunctionBlockEntity;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -36,6 +39,8 @@ public class Recomposedlogic implements ModInitializer {
         // Use Fabric to bootstrap the Common mod.
         Constants.LOG.info("Hello Fabric world!");
         CommonClass.init();
+        ServerChunkEvents.CHUNK_UNLOAD.register((level, chunk) -> PerLevelNetworkDiagramCache.unloadChunk(level, chunk.getPos()));
+        ServerWorldEvents.UNLOAD.register((server, level) -> PerLevelNetworkDiagramCache.unloadLevel(level));
         ModBlockEntities.SCALAR_CONSTANT = registerBlockEntity("scalar_constant", BlockEntityType.Builder.of(ScalarConstantBlockEntity::new, ModBlocks.SCALAR_CONSTANT).build());
         ModBlockEntities.SCALAR_COMPARATOR = registerBlockEntity("scalar_comparator", BlockEntityType.Builder.of(ScalarComparatorBlockEntity::new, ModBlocks.SCALAR_COMPARATOR).build());
         ModBlockEntities.CIRCUIT_ORIGIN = registerBlockEntity("circuit_origin", BlockEntityType.Builder.of(CircuitOriginBlockEntity::new, ModBlocks.CIRCUIT_ORIGIN).build());

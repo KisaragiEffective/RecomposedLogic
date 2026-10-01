@@ -364,6 +364,83 @@ public final class RecomposedLogicGameTest implements FabricGameTest {
     }
 
     @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
+    public void runtimeEvaluatesLongCableChain(GameTestHelper helper) {
+        BlockPos source = new BlockPos(1, 1, 1);
+        BlockPos exporter = new BlockPos(12, 1, 1);
+
+        scalar(helper, source, 7.0);
+        for (int x = 2; x < 12; x++) {
+            helper.setBlock(new BlockPos(x, 1, 1), ModBlocks.PIN_CABLE);
+        }
+        helper.setBlock(exporter, ModBlocks.REDSTONE_EXPORTER);
+
+        double value = WorldRuntimeEvaluator.scalarInput(helper.getLevel(), helper.absolutePos(exporter), "value");
+
+        helper.assertValueEqual(value, 7.0, "a long cable chain should propagate its source value");
+        helper.succeed();
+    }
+
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
+    public void runtimeSharesSingleDriverNetworkAcrossMultipleExporters(GameTestHelper helper) {
+        BlockPos source = new BlockPos(1, 1, 2);
+        BlockPos firstExporter = new BlockPos(4, 1, 2);
+        BlockPos secondExporter = new BlockPos(5, 1, 1);
+        BlockPos thirdExporter = new BlockPos(5, 1, 3);
+
+        scalar(helper, source, 7.0);
+        helper.setBlock(new BlockPos(2, 1, 2), ModBlocks.PIN_CABLE);
+        helper.setBlock(new BlockPos(3, 1, 2), ModBlocks.PIN_CABLE);
+        helper.setBlock(new BlockPos(3, 1, 1), ModBlocks.PIN_CABLE);
+        helper.setBlock(new BlockPos(4, 1, 1), ModBlocks.PIN_CABLE);
+        helper.setBlock(new BlockPos(3, 1, 3), ModBlocks.PIN_CABLE);
+        helper.setBlock(new BlockPos(4, 1, 3), ModBlocks.PIN_CABLE);
+        helper.setBlock(firstExporter, ModBlocks.REDSTONE_EXPORTER);
+        helper.setBlock(secondExporter, ModBlocks.REDSTONE_EXPORTER);
+        helper.setBlock(thirdExporter, ModBlocks.REDSTONE_EXPORTER);
+
+        double firstValue = WorldRuntimeEvaluator.scalarInput(helper.getLevel(), helper.absolutePos(firstExporter), "value");
+        double secondValue = WorldRuntimeEvaluator.scalarInput(helper.getLevel(), helper.absolutePos(secondExporter), "value");
+        double thirdValue = WorldRuntimeEvaluator.scalarInput(helper.getLevel(), helper.absolutePos(thirdExporter), "value");
+
+        helper.assertValueEqual(firstValue, 7.0, "the first exporter should receive the source value");
+        helper.assertValueEqual(secondValue, 7.0, "the second exporter should receive the source value");
+        helper.assertValueEqual(thirdValue, 7.0, "the third exporter should receive the source value");
+        helper.runAfterDelay(1, () -> {
+            helper.<ScalarConstantBlockEntity>getBlockEntity(source).scalarValue(9.0);
+
+            double updatedFirstValue = WorldRuntimeEvaluator.scalarInput(helper.getLevel(), helper.absolutePos(firstExporter), "value");
+            double updatedSecondValue = WorldRuntimeEvaluator.scalarInput(helper.getLevel(), helper.absolutePos(secondExporter), "value");
+            double updatedThirdValue = WorldRuntimeEvaluator.scalarInput(helper.getLevel(), helper.absolutePos(thirdExporter), "value");
+
+            helper.assertValueEqual(updatedFirstValue, 9.0, "the first exporter should observe the source value on the next tick");
+            helper.assertValueEqual(updatedSecondValue, 9.0, "the second exporter should observe the source value on the next tick");
+            helper.assertValueEqual(updatedThirdValue, 9.0, "the third exporter should observe the source value on the next tick");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
+    public void runtimeInvalidatesNetworkAfterCablePathChanges(GameTestHelper helper) {
+        BlockPos source = new BlockPos(1, 1, 1);
+        BlockPos firstCable = new BlockPos(2, 1, 1);
+        BlockPos secondCable = new BlockPos(3, 1, 1);
+        BlockPos exporter = new BlockPos(4, 1, 1);
+
+        scalar(helper, source, 7.0);
+        helper.setBlock(firstCable, ModBlocks.PIN_CABLE);
+        helper.setBlock(secondCable, ModBlocks.PIN_CABLE);
+        helper.setBlock(exporter, ModBlocks.REDSTONE_EXPORTER);
+
+        double connectedValue = WorldRuntimeEvaluator.scalarInput(helper.getLevel(), helper.absolutePos(exporter), "value");
+        helper.setBlock(secondCable, Blocks.AIR);
+        double disconnectedValue = WorldRuntimeEvaluator.scalarInput(helper.getLevel(), helper.absolutePos(exporter), "value");
+
+        helper.assertValueEqual(connectedValue, 7.0, "the cached network should initially reach its source");
+        helper.assertValueEqual(disconnectedValue, 0.0, "a changed cable path must not reuse the previous network");
+        helper.succeed();
+    }
+
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
     public void undyedCableConnectsOnlyToSingleColoredCable(GameTestHelper helper) {
         BlockPos undyed = new BlockPos(2, 1, 2);
         BlockPos dyed = undyed.east();

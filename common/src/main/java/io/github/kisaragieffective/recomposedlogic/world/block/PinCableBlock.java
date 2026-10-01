@@ -4,6 +4,7 @@ import com.mojang.serialization.MapCodec;
 import io.github.kisaragieffective.recomposedlogic.registry.ModBlocks;
 import io.github.kisaragieffective.recomposedlogic.registry.ModItems;
 import io.github.kisaragieffective.recomposedlogic.world.ColorSet16;
+import io.github.kisaragieffective.recomposedlogic.world.PerLevelNetworkDiagramCache;
 import io.github.kisaragieffective.recomposedlogic.world.LogicBlockKind;
 import io.github.kisaragieffective.recomposedlogic.world.LogicBlockKindProvider;
 import io.github.kisaragieffective.recomposedlogic.world.LogicState;
@@ -150,9 +151,18 @@ public class PinCableBlock extends BaseEntityBlock implements LogicBlockKindProv
     }
 
     public static void updateCableAndNeighbors(Level level, BlockPos pos) {
-        updateCable(level, pos);
-        for (Direction direction : Direction.values()) {
-            updateCable(level, pos.relative(direction));
+        if (!level.isClientSide) {
+            PerLevelNetworkDiagramCache.beginTopologyUpdate(level, pos);
+        }
+        try {
+            updateCable(level, pos);
+            for (Direction direction : Direction.values()) {
+                updateCable(level, pos.relative(direction));
+            }
+        } finally {
+            if (!level.isClientSide) {
+                PerLevelNetworkDiagramCache.endTopologyUpdate(level);
+            }
         }
     }
 

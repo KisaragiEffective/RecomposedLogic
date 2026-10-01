@@ -24,6 +24,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import java.io.IOException;
 import java.io.Reader;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 
@@ -78,12 +79,20 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
         boolean hasUndyedAdapterConnection = false;
         if (coloredCable.singleColor() && cable.getLevel() != null) {
             DyeColor color = coloredCable.colors().colors().getFirst();
+            EnumSet<Direction> undyedConnections = EnumSet.noneOf(Direction.class);
             for (Direction direction : PinCableBlock.connectionDirections(cable.getLevel(), cable.getBlockPos(), color)) {
                 Block neighbor = cable.getLevel().getBlockState(cable.getBlockPos().relative(direction)).getBlock();
                 if (neighbor == ModBlocks.PIN_CABLE || neighbor == ModBlocks.UNDYED_INTERNAL_JUNCTION) {
                     hasUndyedAdapterConnection = true;
-                    renderUndyedAdapter(direction, color, poseStack, bufferSource, packedLight, packedOverlay);
+                    undyedConnections.add(direction);
                 }
+            }
+            if (connectsToUndyedCablesOnBothSides(undyedConnections)) {
+                renderColor(axis, color, CENTER, CENTER, poseStack, bufferSource, packedLight, packedOverlay);
+                return;
+            }
+            for (Direction direction : undyedConnections) {
+                renderUndyedAdapter(direction, color, poseStack, bufferSource, packedLight, packedOverlay);
             }
         }
         if (!hasUndyedAdapterConnection) {
@@ -91,6 +100,10 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
                 renderColor(axis, color, poseStack, bufferSource, packedLight, packedOverlay);
             }
         }
+    }
+
+    private static boolean connectsToUndyedCablesOnBothSides(EnumSet<Direction> directions) {
+        return directions.size() == 2 && directions.contains(directions.iterator().next().getOpposite());
     }
 
     private static void renderDyedJunction(ColoredCableBlockEntity cable, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
@@ -127,7 +140,7 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
     private static void renderUndyedAdapter(Direction direction, DyeColor color, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
         poseStack.pushPose();
         rotateAdapterFromNorth(direction, poseStack);
-        renderAdapterPath(color, poseStack, bufferSource, packedLight, packedOverlay);
+        renderAdapterPath(color, requiresAdapterMirror(direction), poseStack, bufferSource, packedLight, packedOverlay);
         poseStack.popPose();
     }
 
@@ -138,12 +151,22 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
             case SOUTH -> poseStack.rotateAround(Axis.YP.rotationDegrees(180), 0.5F, 0.5F, 0.5F);
             case EAST -> poseStack.rotateAround(Axis.YP.rotationDegrees(-90), 0.5F, 0.5F, 0.5F);
             case WEST -> poseStack.rotateAround(Axis.YP.rotationDegrees(90), 0.5F, 0.5F, 0.5F);
-            case UP -> poseStack.rotateAround(Axis.XP.rotationDegrees(90), 0.5F, 0.5F, 0.5F);
-            case DOWN -> poseStack.rotateAround(Axis.XP.rotationDegrees(-90), 0.5F, 0.5F, 0.5F);
+            case UP -> {
+                poseStack.rotateAround(Axis.XP.rotationDegrees(90), 0.5F, 0.5F, 0.5F);
+                poseStack.rotateAround(Axis.ZP.rotationDegrees(-90), 0.5F, 0.5F, 0.5F);
+            }
+            case DOWN -> {
+                poseStack.rotateAround(Axis.XP.rotationDegrees(-90), 0.5F, 0.5F, 0.5F);
+                poseStack.rotateAround(Axis.ZP.rotationDegrees(-90), 0.5F, 0.5F, 0.5F);
+            }
         }
     }
 
-    private static void renderAdapterPath(DyeColor color, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    private static boolean requiresAdapterMirror(Direction direction) {
+        return direction == Direction.SOUTH || direction == Direction.EAST || direction == Direction.UP;
+    }
+
+    private static void renderAdapterPath(DyeColor color, boolean mirrored, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
         List<AdapterElement> elements = adapterElements();
         int start = color.getId() * ADAPTER_ELEMENTS_PER_COLOR;
         if (elements.size() < start + ADAPTER_ELEMENTS_PER_COLOR) {
@@ -151,7 +174,11 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
         }
         Block wool = WOOL_BLOCKS[color.getId()];
         for (int index = 0; index < ADAPTER_ELEMENTS_PER_COLOR; index++) {
-            renderAdapterElement(elements.get(start + index), index == 0 ? Blocks.COPPER_BLOCK : wool, poseStack, bufferSource, packedLight, packedOverlay);
+            AdapterElement element = elements.get(start + index);
+            if (mirrored) {
+                element = element.mirroredAcrossX();
+            }
+            renderAdapterElement(element, index == 0 ? Blocks.COPPER_BLOCK : wool, poseStack, bufferSource, packedLight, packedOverlay);
         }
     }
 
@@ -216,6 +243,14 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
             double originX, double originY, double originZ,
             Axis axis, float angle
     ) {
+        private AdapterElement mirroredAcrossX() {
+            return new AdapterElement(
+                    16.0 - toX, fromY, fromZ,
+                    16.0 - fromX, toY, toZ,
+                    16.0 - originX, originY, originZ,
+                    axis, axis == Axis.XP ? angle : -angle
+            );
+        }
     }
 
     private static void renderUndyedJunction(CableBlockEntity cable, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
@@ -241,8 +276,11 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
 
     private static void renderColor(Direction.Axis axis, DyeColor color, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
         int id = color.getId();
-        double offsetA = slotOffsetA(axis, id);
-        double offsetB = slotOffsetB(axis, id);
+        renderColor(axis, color, slotOffsetA(axis, id), slotOffsetB(axis, id), poseStack, bufferSource, packedLight, packedOverlay);
+    }
+
+    private static void renderColor(Direction.Axis axis, DyeColor color, double offsetA, double offsetB, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+        int id = color.getId();
         Block wool = WOOL_BLOCKS[id];
         renderBox(axis, offsetA, offsetB, FRAME, SLOT_SIZE, wool, poseStack, bufferSource, packedLight, packedOverlay);
         renderBox(axis, offsetA + SLOT_SIZE - FRAME, offsetB, FRAME, SLOT_SIZE, wool, poseStack, bufferSource, packedLight, packedOverlay);

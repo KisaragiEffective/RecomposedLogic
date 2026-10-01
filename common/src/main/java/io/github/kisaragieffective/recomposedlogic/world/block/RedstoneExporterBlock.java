@@ -19,6 +19,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Predicate;
 
 public class RedstoneExporterBlock extends BaseEntityBlock implements LogicBlockKindProvider {
     public static final List<PortSpec> PORTS = List.of(new PortSpec("value", Direction.WEST, false));
@@ -82,8 +84,7 @@ public class RedstoneExporterBlock extends BaseEntityBlock implements LogicBlock
 
     @Override
     protected void tick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
-        BlockEntity blockEntity = level.getBlockEntity(pos);
-        if (blockEntity instanceof RedstoneExporterBlockEntity logic) {
+        if (anyOutputDirectionIsRedstoneSensitive(level, pos) && level.getBlockEntity(pos) instanceof RedstoneExporterBlockEntity logic) {
             double value = WorldRuntimeEvaluator.scalarInput(level, pos, "value");
             int power = (int) Math.floor(Math.max(0.0, Math.min(15.0, value)));
             if (power != logic.redstonePower()) {
@@ -92,5 +93,14 @@ public class RedstoneExporterBlock extends BaseEntityBlock implements LogicBlock
             }
         }
         level.scheduleTick(pos, this, 4);
+    }
+
+    private boolean anyOutputDirectionIsRedstoneSensitive(ServerLevel level, BlockPos pos) {
+        // TODO: 全部空気orケーブルなら無視
+        return Direction
+                .stream()
+                .map(pos::relative)
+                .map(level::getBlockState)
+                .allMatch(Predicate.not(BlockStateBase::isAir));
     }
 }

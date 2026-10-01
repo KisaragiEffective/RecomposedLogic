@@ -1,6 +1,7 @@
 package io.github.kisaragieffective.recomposedlogic.world.entity;
 
 import io.github.kisaragieffective.recomposedlogic.world.ColorSet16;
+import io.github.kisaragieffective.recomposedlogic.world.PerLevelNetworkDiagramCache;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -27,12 +28,14 @@ public abstract class ColoredCableBlockEntity extends CableBlockEntity {
             return false;
         }
         colors = colors.with(color);
+        invalidateNetwork();
         syncChanged();
         return true;
     }
 
     public void colors(ColorSet16 colors) {
         this.colors = colors;
+        invalidateNetwork();
         syncChanged();
     }
 
@@ -46,6 +49,12 @@ public abstract class ColoredCableBlockEntity extends CableBlockEntity {
 
     public boolean multipleColors() {
         return colors.size() > 1;
+    }
+
+    private void invalidateNetwork() {
+        if (level != null && !level.isClientSide) {
+            PerLevelNetworkDiagramCache.invalidateAround(level, worldPosition);
+        }
     }
 
     @Override
