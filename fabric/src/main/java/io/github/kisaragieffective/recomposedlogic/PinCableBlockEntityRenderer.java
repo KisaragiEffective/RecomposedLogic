@@ -1,6 +1,18 @@
 package io.github.kisaragieffective.recomposedlogic;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.renderer.Sheets;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.ChunkPos;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.WeakHashMap;
 import com.mojang.math.Axis;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -38,6 +50,9 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
     private static final int ADAPTER_ELEMENTS_PER_COLOR = 5;
     private static final ResourceLocation COLORED_TO_UNDYED_MODEL = ResourceLocation.fromNamespaceAndPath("recomposedlogic", "models/block/colored_to_undyed_pin_cable.json");
     private static List<AdapterElement> adapterElements;
+    private static final Map<BoxKey, List<CableMesh.Vertex>> BOX_MESHES = new HashMap<>();
+    private static final Map<CableBlockEntity, List<CableMesh.Vertex>> CABLE_MESHES = new WeakHashMap<>();
+
     private static final Block[] WOOL_BLOCKS = {
             Blocks.WHITE_WOOL,
             Blocks.ORANGE_WOOL,
@@ -57,23 +72,78 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
             Blocks.BLACK_WOOL
     };
 
+    public static void clearCableMeshes() {
+        CABLE_MESHES.clear();
+    }
+
+    public static void invalidateChunk(Level level, ChunkPos chunk) {
+        CABLE_MESHES.keySet().removeIf(cable -> cable.getLevel() == level
+                && cable.getBlockPos().getX() >= chunk.getMinBlockX() - 1
+                && cable.getBlockPos().getX() <= chunk.getMaxBlockX() + 1
+                && cable.getBlockPos().getZ() >= chunk.getMinBlockZ() - 1
+                && cable.getBlockPos().getZ() <= chunk.getMaxBlockZ() + 1);
+    }
+
+    public static void reloadMeshes() {
+        clearCableMeshes();
+        BOX_MESHES.clear();
+        adapterElements = null;
+    }
+
+    public static void invalidateAround(Level level, BlockPos pos) {
+        if (level == null || !level.isClientSide) {
+            return;
+        }
+        invalidateAt(level, pos);
+        for (Direction direction : Direction.values()) {
+            invalidateAt(level, pos.relative(direction));
+        }
+    }
+
+    private static void invalidateAt(Level level, BlockPos pos) {
+        if (level.getBlockEntity(pos) instanceof CableBlockEntity cable) {
+            CABLE_MESHES.remove(cable);
+        }
+    }
+
     public PinCableBlockEntityRenderer(BlockEntityRendererProvider.Context context) {
     }
 
     @Override
     public void render(CableBlockEntity cable, float partialTick, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+        List<CableMesh.Vertex> mesh = CABLE_MESHES.computeIfAbsent(cable, ignored -> {
+            List<CableMesh.Vertex> vertices = new ArrayList<>();
+            buildMesh(cable, new PoseStack(), vertices);
+            return CableMesh.removeCoveredFaces(vertices);
+        });
+        if (mesh.isEmpty()) {
+            return;
+        }
+        VertexConsumer consumer = bufferSource.getBuffer(Sheets.cutoutBlockSheet());
+        PoseStack.Pose pose = poseStack.last();
+        Vector3f position = new Vector3f();
+        Vector3f normal = new Vector3f();
+        for (CableMesh.Vertex vertex : mesh) {
+            pose.pose().transformPosition(vertex.x(), vertex.y(), vertex.z(), position);
+            pose.transformNormal(vertex.nx(), vertex.ny(), vertex.nz(), normal);
+            consumer.addVertex(position.x, position.y, position.z, -1, vertex.u(), vertex.v(),
+                    packedOverlay, packedLight, normal.x, normal.y, normal.z);
+        }
+    }
+
+    private static void buildMesh(CableBlockEntity cable, PoseStack poseStack, List<CableMesh.Vertex> bufferSource) {
         BlockState state = cable.getBlockState();
         if (state.getBlock() == ModBlocks.UNDYED_INTERNAL_JUNCTION) {
-            renderUndyedJunction(cable, poseStack, bufferSource, packedLight, packedOverlay);
+            renderUndyedJunction(cable, poseStack, bufferSource);
             return;
         }
         if (state.getBlock() == ModBlocks.DYED_INTERNAL_JUNCTION && cable instanceof ColoredCableBlockEntity coloredJunction) {
-            renderDyedJunction(coloredJunction, poseStack, bufferSource, packedLight, packedOverlay);
+            renderDyedJunction(coloredJunction, poseStack, bufferSource);
             return;
         }
         Direction.Axis axis = state.hasProperty(PinCableBlock.AXIS) ? state.getValue(PinCableBlock.AXIS) : Direction.Axis.Y;
         if (!(cable instanceof ColoredCableBlockEntity coloredCable)) {
-            renderBox(axis, CENTER, CENTER, CENTER_SIZE, CENTER_SIZE, Blocks.COPPER_BLOCK, poseStack, bufferSource, packedLight, packedOverlay);
+            renderBox(axis, CENTER, CENTER, CENTER_SIZE, CENTER_SIZE, Blocks.COPPER_BLOCK, poseStack, bufferSource);
             return;
         }
         boolean hasUndyedAdapterConnection = false;
@@ -88,16 +158,16 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
                 }
             }
             if (connectsToUndyedCablesOnBothSides(undyedConnections)) {
-                renderColor(axis, color, CENTER, CENTER, poseStack, bufferSource, packedLight, packedOverlay);
+                renderColor(axis, color, CENTER, CENTER, poseStack, bufferSource);
                 return;
             }
             for (Direction direction : undyedConnections) {
-                renderUndyedAdapter(direction, color, poseStack, bufferSource, packedLight, packedOverlay);
+                renderUndyedAdapter(direction, color, poseStack, bufferSource);
             }
         }
         if (!hasUndyedAdapterConnection) {
             for (DyeColor color : coloredCable.colors().colors()) {
-                renderColor(axis, color, poseStack, bufferSource, packedLight, packedOverlay);
+                renderColor(axis, color, poseStack, bufferSource);
             }
         }
     }
@@ -106,41 +176,41 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
         return directions.size() == 2 && directions.contains(directions.iterator().next().getOpposite());
     }
 
-    private static void renderDyedJunction(ColoredCableBlockEntity cable, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    private static void renderDyedJunction(ColoredCableBlockEntity cable, PoseStack poseStack, List<CableMesh.Vertex> bufferSource) {
         if (cable.getLevel() == null) {
             return;
         }
         for (DyeColor color : cable.colors().colors()) {
             for (Direction direction : PinCableBlock.connectionDirections(cable.getLevel(), cable.getBlockPos(), color)) {
-                renderJunctionPlug(direction, color, poseStack, bufferSource, packedLight, packedOverlay);
+                renderJunctionPlug(direction, color, poseStack, bufferSource);
             }
         }
     }
 
-    private static void renderJunctionPlug(Direction direction, DyeColor color, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    private static void renderJunctionPlug(Direction direction, DyeColor color, PoseStack poseStack, List<CableMesh.Vertex> bufferSource) {
         double offsetA = slotOffsetA(direction.getAxis(), color.getId());
         double offsetB = slotOffsetB(direction.getAxis(), color.getId());
         Block wool = WOOL_BLOCKS[color.getId()];
-        renderJunctionSegment(direction, offsetA, offsetB, SLOT_SIZE, wool, poseStack, bufferSource, packedLight, packedOverlay);
-        renderJunctionSegment(direction, offsetA + FRAME, offsetB + FRAME, CONDUCTOR, Blocks.COPPER_BLOCK, poseStack, bufferSource, packedLight, packedOverlay);
+        renderJunctionSegment(direction, offsetA, offsetB, SLOT_SIZE, wool, poseStack, bufferSource);
+        renderJunctionSegment(direction, offsetA + FRAME, offsetB + FRAME, CONDUCTOR, Blocks.COPPER_BLOCK, poseStack, bufferSource);
     }
 
-    private static void renderJunctionSegment(Direction direction, double offsetA, double offsetB, double size, Block block, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    private static void renderJunctionSegment(Direction direction, double offsetA, double offsetB, double size, Block block, PoseStack poseStack, List<CableMesh.Vertex> bufferSource) {
         double depth = 4.0 / 16.0;
         switch (direction) {
-            case EAST -> renderBlockBox(1.0 - depth, offsetA, offsetB, depth, size, size, block, poseStack, bufferSource, packedLight, packedOverlay);
-            case WEST -> renderBlockBox(0.0, offsetA, offsetB, depth, size, size, block, poseStack, bufferSource, packedLight, packedOverlay);
-            case UP -> renderBlockBox(offsetA, 1.0 - depth, offsetB, size, depth, size, block, poseStack, bufferSource, packedLight, packedOverlay);
-            case DOWN -> renderBlockBox(offsetA, 0.0, offsetB, size, depth, size, block, poseStack, bufferSource, packedLight, packedOverlay);
-            case SOUTH -> renderBlockBox(offsetA, offsetB, 1.0 - depth, size, size, depth, block, poseStack, bufferSource, packedLight, packedOverlay);
-            case NORTH -> renderBlockBox(offsetA, offsetB, 0.0, size, size, depth, block, poseStack, bufferSource, packedLight, packedOverlay);
+            case EAST -> renderBlockBox(1.0 - depth, offsetA, offsetB, depth, size, size, block, poseStack, bufferSource);
+            case WEST -> renderBlockBox(0.0, offsetA, offsetB, depth, size, size, block, poseStack, bufferSource);
+            case UP -> renderBlockBox(offsetA, 1.0 - depth, offsetB, size, depth, size, block, poseStack, bufferSource);
+            case DOWN -> renderBlockBox(offsetA, 0.0, offsetB, size, depth, size, block, poseStack, bufferSource);
+            case SOUTH -> renderBlockBox(offsetA, offsetB, 1.0 - depth, size, size, depth, block, poseStack, bufferSource);
+            case NORTH -> renderBlockBox(offsetA, offsetB, 0.0, size, size, depth, block, poseStack, bufferSource);
         }
     }
 
-    private static void renderUndyedAdapter(Direction direction, DyeColor color, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    private static void renderUndyedAdapter(Direction direction, DyeColor color, PoseStack poseStack, List<CableMesh.Vertex> bufferSource) {
         poseStack.pushPose();
         rotateAdapterFromNorth(direction, poseStack);
-        renderAdapterPath(color, requiresAdapterMirror(direction), poseStack, bufferSource, packedLight, packedOverlay);
+        renderAdapterPath(color, requiresAdapterMirror(direction), poseStack, bufferSource);
         poseStack.popPose();
     }
 
@@ -166,7 +236,7 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
         return direction == Direction.SOUTH || direction == Direction.EAST || direction == Direction.UP;
     }
 
-    private static void renderAdapterPath(DyeColor color, boolean mirrored, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    private static void renderAdapterPath(DyeColor color, boolean mirrored, PoseStack poseStack, List<CableMesh.Vertex> bufferSource) {
         List<AdapterElement> elements = adapterElements();
         int start = color.getId() * ADAPTER_ELEMENTS_PER_COLOR;
         if (elements.size() < start + ADAPTER_ELEMENTS_PER_COLOR) {
@@ -178,11 +248,11 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
             if (mirrored) {
                 element = element.mirroredAcrossX();
             }
-            renderAdapterElement(element, index == 0 ? Blocks.COPPER_BLOCK : wool, poseStack, bufferSource, packedLight, packedOverlay);
+            renderAdapterElement(element, index == 0 ? Blocks.COPPER_BLOCK : wool, poseStack, bufferSource);
         }
     }
 
-    private static void renderAdapterElement(AdapterElement element, Block block, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    private static void renderAdapterElement(AdapterElement element, Block block, PoseStack poseStack, List<CableMesh.Vertex> bufferSource) {
         poseStack.pushPose();
         poseStack.translate(element.originX() / 16.0, element.originY() / 16.0, element.originZ() / 16.0);
         poseStack.mulPose(element.axis().rotationDegrees(element.angle()));
@@ -193,7 +263,7 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
                 (element.toX() - element.fromX()) / 16.0,
                 (element.toY() - element.fromY()) / 16.0,
                 (element.toZ() - element.fromZ()) / 16.0,
-                block, poseStack, bufferSource, packedLight, packedOverlay
+                block, poseStack, bufferSource
         );
         poseStack.popPose();
     }
@@ -253,40 +323,40 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
         }
     }
 
-    private static void renderUndyedJunction(CableBlockEntity cable, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
-        renderBlockBox(CENTER, CENTER, CENTER, CENTER_SIZE, CENTER_SIZE, CENTER_SIZE, Blocks.COPPER_BLOCK, poseStack, bufferSource, packedLight, packedOverlay);
+    private static void renderUndyedJunction(CableBlockEntity cable, PoseStack poseStack, List<CableMesh.Vertex> bufferSource) {
+        renderBlockBox(CENTER, CENTER, CENTER, CENTER_SIZE, CENTER_SIZE, CENTER_SIZE, Blocks.COPPER_BLOCK, poseStack, bufferSource);
         if (cable.getLevel() == null) {
             return;
         }
         for (Direction direction : PinCableBlock.connectionDirections(cable.getLevel(), cable.getBlockPos())) {
-            renderSegment(direction, poseStack, bufferSource, packedLight, packedOverlay);
+            renderSegment(direction, poseStack, bufferSource);
         }
     }
 
-    private static void renderSegment(Direction direction, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    private static void renderSegment(Direction direction, PoseStack poseStack, List<CableMesh.Vertex> bufferSource) {
         switch (direction) {
-            case EAST -> renderBlockBox(0.5, CENTER, CENTER, 0.5, CENTER_SIZE, CENTER_SIZE, Blocks.COPPER_BLOCK, poseStack, bufferSource, packedLight, packedOverlay);
-            case WEST -> renderBlockBox(0.0, CENTER, CENTER, 0.5, CENTER_SIZE, CENTER_SIZE, Blocks.COPPER_BLOCK, poseStack, bufferSource, packedLight, packedOverlay);
-            case UP -> renderBlockBox(CENTER, 0.5, CENTER, CENTER_SIZE, 0.5, CENTER_SIZE, Blocks.COPPER_BLOCK, poseStack, bufferSource, packedLight, packedOverlay);
-            case DOWN -> renderBlockBox(CENTER, 0.0, CENTER, CENTER_SIZE, 0.5, CENTER_SIZE, Blocks.COPPER_BLOCK, poseStack, bufferSource, packedLight, packedOverlay);
-            case SOUTH -> renderBlockBox(CENTER, CENTER, 0.5, CENTER_SIZE, CENTER_SIZE, 0.5, Blocks.COPPER_BLOCK, poseStack, bufferSource, packedLight, packedOverlay);
-            case NORTH -> renderBlockBox(CENTER, CENTER, 0.0, CENTER_SIZE, CENTER_SIZE, 0.5, Blocks.COPPER_BLOCK, poseStack, bufferSource, packedLight, packedOverlay);
+            case EAST -> renderBlockBox(0.5, CENTER, CENTER, 0.5, CENTER_SIZE, CENTER_SIZE, Blocks.COPPER_BLOCK, poseStack, bufferSource);
+            case WEST -> renderBlockBox(0.0, CENTER, CENTER, 0.5, CENTER_SIZE, CENTER_SIZE, Blocks.COPPER_BLOCK, poseStack, bufferSource);
+            case UP -> renderBlockBox(CENTER, 0.5, CENTER, CENTER_SIZE, 0.5, CENTER_SIZE, Blocks.COPPER_BLOCK, poseStack, bufferSource);
+            case DOWN -> renderBlockBox(CENTER, 0.0, CENTER, CENTER_SIZE, 0.5, CENTER_SIZE, Blocks.COPPER_BLOCK, poseStack, bufferSource);
+            case SOUTH -> renderBlockBox(CENTER, CENTER, 0.5, CENTER_SIZE, CENTER_SIZE, 0.5, Blocks.COPPER_BLOCK, poseStack, bufferSource);
+            case NORTH -> renderBlockBox(CENTER, CENTER, 0.0, CENTER_SIZE, CENTER_SIZE, 0.5, Blocks.COPPER_BLOCK, poseStack, bufferSource);
         }
     }
 
-    private static void renderColor(Direction.Axis axis, DyeColor color, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    private static void renderColor(Direction.Axis axis, DyeColor color, PoseStack poseStack, List<CableMesh.Vertex> bufferSource) {
         int id = color.getId();
-        renderColor(axis, color, slotOffsetA(axis, id), slotOffsetB(axis, id), poseStack, bufferSource, packedLight, packedOverlay);
+        renderColor(axis, color, slotOffsetA(axis, id), slotOffsetB(axis, id), poseStack, bufferSource);
     }
 
-    private static void renderColor(Direction.Axis axis, DyeColor color, double offsetA, double offsetB, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    private static void renderColor(Direction.Axis axis, DyeColor color, double offsetA, double offsetB, PoseStack poseStack, List<CableMesh.Vertex> bufferSource) {
         int id = color.getId();
         Block wool = WOOL_BLOCKS[id];
-        renderBox(axis, offsetA, offsetB, FRAME, SLOT_SIZE, wool, poseStack, bufferSource, packedLight, packedOverlay);
-        renderBox(axis, offsetA + SLOT_SIZE - FRAME, offsetB, FRAME, SLOT_SIZE, wool, poseStack, bufferSource, packedLight, packedOverlay);
-        renderBox(axis, offsetA + FRAME, offsetB, CONDUCTOR, FRAME, wool, poseStack, bufferSource, packedLight, packedOverlay);
-        renderBox(axis, offsetA + FRAME, offsetB + SLOT_SIZE - FRAME, CONDUCTOR, FRAME, wool, poseStack, bufferSource, packedLight, packedOverlay);
-        renderBox(axis, offsetA + FRAME, offsetB + FRAME, CONDUCTOR, CONDUCTOR, Blocks.COPPER_BLOCK, poseStack, bufferSource, packedLight, packedOverlay);
+        renderBox(axis, offsetA, offsetB, FRAME, SLOT_SIZE, wool, poseStack, bufferSource);
+        renderBox(axis, offsetA + SLOT_SIZE - FRAME, offsetB, FRAME, SLOT_SIZE, wool, poseStack, bufferSource);
+        renderBox(axis, offsetA + FRAME, offsetB, CONDUCTOR, FRAME, wool, poseStack, bufferSource);
+        renderBox(axis, offsetA + FRAME, offsetB + SLOT_SIZE - FRAME, CONDUCTOR, FRAME, wool, poseStack, bufferSource);
+        renderBox(axis, offsetA + FRAME, offsetB + FRAME, CONDUCTOR, CONDUCTOR, Blocks.COPPER_BLOCK, poseStack, bufferSource);
     }
 
     private static double slotOffsetA(Direction.Axis axis, int colorId) {
@@ -312,20 +382,63 @@ public class PinCableBlockEntityRenderer implements BlockEntityRenderer<CableBlo
         return SLOT_START + slot * SLOT_SIZE;
     }
 
-    private static void renderBox(Direction.Axis axis, double offsetA, double offsetB, double sizeA, double sizeB, Block block, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    private static void renderBox(Direction.Axis axis, double offsetA, double offsetB, double sizeA, double sizeB, Block block, PoseStack poseStack, List<CableMesh.Vertex> bufferSource) {
         switch (axis) {
-            case X -> renderBlockBox(0.0, offsetA, offsetB, 1.0, sizeA, sizeB, block, poseStack, bufferSource, packedLight, packedOverlay);
-            case Y -> renderBlockBox(offsetA, 0.0, offsetB, sizeA, 1.0, sizeB, block, poseStack, bufferSource, packedLight, packedOverlay);
-            case Z -> renderBlockBox(offsetA, offsetB, 0.0, sizeA, sizeB, 1.0, block, poseStack, bufferSource, packedLight, packedOverlay);
+            case X -> renderBlockBox(0.0, offsetA, offsetB, 1.0, sizeA, sizeB, block, poseStack, bufferSource);
+            case Y -> renderBlockBox(offsetA, 0.0, offsetB, sizeA, 1.0, sizeB, block, poseStack, bufferSource);
+            case Z -> renderBlockBox(offsetA, offsetB, 0.0, sizeA, sizeB, 1.0, block, poseStack, bufferSource);
         }
     }
 
-    // TODO: これは重い。90000 invokesで 7000ms もかかっている。おそらくメモ化するべき。そうでなければ、シェーダーを使うなり何なりでかなりチューニングするべき。
-    private static void renderBlockBox(double x, double y, double z, double sizeX, double sizeY, double sizeZ, Block block, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
+    private static void renderBlockBox(double x, double y, double z, double sizeX, double sizeY, double sizeZ, Block block, PoseStack poseStack, List<CableMesh.Vertex> vertices) {
         poseStack.pushPose();
         poseStack.translate(x, y, z);
         poseStack.scale((float) sizeX, (float) sizeY, (float) sizeZ);
-        Minecraft.getInstance().getBlockRenderer().renderSingleBlock(block.defaultBlockState(), poseStack, bufferSource, packedLight, packedOverlay);
+        BoxKey key = new BoxKey(block, new Matrix4f(poseStack.last().pose()));
+        vertices.addAll(BOX_MESHES.computeIfAbsent(key, ignored -> bakeBox(block, poseStack.last())));
         poseStack.popPose();
     }
+
+    private static List<CableMesh.Vertex> bakeBox(Block block, PoseStack.Pose pose) {
+        var state = block.defaultBlockState();
+        var model = Minecraft.getInstance().getBlockRenderer().getBlockModel(state);
+        // codex said:
+        // > 42という値自体に特別な意味はありません。
+        // > 今回は、置き換え前のMinecraftの ModelBlockRenderer.renderModel も 42L を使っていたため、その挙動を引き継いでいます。
+        // > 通常の羊毛・銅ブロックの単一モデルでは、乱数による選択は発生しません。
+        var fixedRandomSeedToCancelRandomness = 42L;
+        RandomSource random = RandomSource.create();
+        List<CableMesh.Vertex> vertices = new ArrayList<>();
+        for (Direction direction : Direction.values()) {
+            random.setSeed(fixedRandomSeedToCancelRandomness);
+            for (BakedQuad quad : model.getQuads(state, direction, random)) {
+                bakeQuad(quad, pose, vertices);
+            }
+        }
+        random.setSeed(fixedRandomSeedToCancelRandomness);
+        for (BakedQuad quad : model.getQuads(state, null, random)) {
+            bakeQuad(quad, pose, vertices);
+        }
+        return List.copyOf(vertices);
+    }
+
+    private static void bakeQuad(BakedQuad quad, PoseStack.Pose pose, List<CableMesh.Vertex> vertices) {
+        int[] data = quad.getVertices();
+        int stride = data.length / 4;
+        var direction = quad.getDirection().getNormal();
+        Vector3f normal = new Vector3f();
+        pose.transformNormal(direction.getX(), direction.getY(), direction.getZ(), normal);
+        Vector3f position = new Vector3f();
+        for (int index = 0; index < 4; index++) {
+            int offset = index * stride;
+            pose.pose().transformPosition(Float.intBitsToFloat(data[offset]), Float.intBitsToFloat(data[offset + 1]),
+                    Float.intBitsToFloat(data[offset + 2]), position);
+            vertices.add(new CableMesh.Vertex(position.x, position.y, position.z,
+                    Float.intBitsToFloat(data[offset + 4]), Float.intBitsToFloat(data[offset + 5]), normal.x, normal.y, normal.z));
+        }
+    }
+
+    private record BoxKey(Block block, Matrix4f transform) {
+    }
+
 }

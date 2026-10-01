@@ -327,3 +327,15 @@ Channel Selector BlockおよびChannel Injector Blockは今回の実装範囲外
 チャンクのアンロード時は、そのチャンクに依存するネットワークを無効化する。
 
 GameTest `networkCacheSurvivesSignalUpdatesAcrossTicks`、`networkCacheInvalidatesAfterColorAndPortChanges`、`runtimeInvalidatesNetworkAfterCablePathChanges`で検証する。
+
+### Fabricクライアントのケーブル描画
+
+ケーブルの箱モデルは、ブロック内座標へ位置・拡縮・回転を適用した頂点としてキャッシュする。
+各ブロックの接続形状から組み立てたメッシュもキャッシュし、毎フレームの接続走査や箱ごとの汎用ブロック描画は行わない。
+ブロック更新、ケーブルの色データ同期・変更、依存するチャンクのロード・アンロード時に該当メッシュを破棄する。
+リソース再読み込み時には、テクスチャUVとアダプターモデルを含む全メッシュを破棄し、次の描画時に再生成する。
+光量、overlay、カメラに対する座標変換は描画時に適用する。
+
+互いに逆向きで同一平面にある長方形の面について、別の面に完全に覆われた内部面を除去する。
+部分的に重なる面や斜めの面は残す。この判定はFabricのユニットテスト `CableMeshTest` で検証する。
+見た目はクライアント上でX/Y/Zの直線、6方向のジャンクション・アダプター、色変更、リソース再読み込みを確認する。

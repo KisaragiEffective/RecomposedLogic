@@ -6,7 +6,10 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [],
   "client": [
-    "MixinTitleScreen"
+    "MixinTitleScreen",
+    "MixinClientLevel",
+    "MixinCableBlockEntity",
+    "MixinCableMeshChanges"
   ],
   "server": [],
   "injectors": {
