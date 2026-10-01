@@ -3,6 +3,7 @@ package io.github.kisaragieffective.recomposedlogic.test;
 import io.github.kisaragieffective.recomposedlogic.logic.*;
 import io.github.kisaragieffective.recomposedlogic.registry.ModBlocks;
 import io.github.kisaragieffective.recomposedlogic.registry.ModItems;
+import io.github.kisaragieffective.recomposedlogic.world.PerLevelNetworkDiagramCache;
 import io.github.kisaragieffective.recomposedlogic.world.WorldCircuitScanner;
 import io.github.kisaragieffective.recomposedlogic.world.WorldRuntimeEvaluator;
 import io.github.kisaragieffective.recomposedlogic.world.block.PinCableBlock;
@@ -26,6 +27,50 @@ import net.minecraft.world.level.block.Blocks;
 import java.util.Map;
 
 public final class RecomposedLogicGameTest implements FabricGameTest {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
+    public void networkCacheSurvivesSignalUpdatesAcrossTicks(GameTestHelper helper) {
+        BlockPos source = new BlockPos(1, 2, 1);
+        BlockPos cable = new BlockPos(2, 2, 1);
+        BlockPos exporter = new BlockPos(3, 2, 1);
+        scalar(helper, source, 7.0);
+        helper.setBlock(cable, ModBlocks.PIN_CABLE);
+        helper.setBlock(exporter, ModBlocks.REDSTONE_EXPORTER);
+        var level = helper.getLevel();
+        var start = new WorldRuntimeEvaluator.CableVisit(helper.absolutePos(cable), null);
+        var network = PerLevelNetworkDiagramCache.networkAt(level, start);
+        helper.<ScalarConstantBlockEntity>getBlockEntity(source).scalarValue(9.0);
+        level.updateNeighborsAt(helper.absolutePos(source), ModBlocks.SCALAR_CONSTANT);
+        helper.runAfterDelay(10, () -> {
+            helper.assertTrue(network == PerLevelNetworkDiagramCache.networkAt(level, start),
+                    "Signal changes and scheduled ticks should retain the network");
+            helper.assertValueEqual(WorldRuntimeEvaluator.scalarInput(level, helper.absolutePos(exporter), "value"), 9.0,
+                    "Retaining topology must not retain the previous tick's signal");
+            helper.setBlock(source, Blocks.AIR);
+            helper.assertTrue(network != PerLevelNetworkDiagramCache.networkAt(level, start),
+                    "Removing a source should rebuild the network");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
+    public void networkCacheInvalidatesAfterColorAndPortChanges(GameTestHelper helper) {
+        BlockPos port = new BlockPos(1, 2, 1);
+        BlockPos cable = new BlockPos(2, 2, 1);
+        helper.setBlock(port, ModBlocks.EXTERNAL_PORT);
+        dyedCable(helper, cable, DyeColor.RED);
+        var level = helper.getLevel();
+        var start = new WorldRuntimeEvaluator.CableVisit(helper.absolutePos(cable), DyeColor.RED);
+        var original = PerLevelNetworkDiagramCache.networkAt(level, start);
+        helper.<ExternalPortBlockEntity>getBlockEntity(port).toggleExternalDirection();
+        var reversed = PerLevelNetworkDiagramCache.networkAt(level, start);
+        helper.assertTrue(original != reversed, "Changing port direction should rebuild the network");
+        helper.assertValueEqual(reversed.driverCount(), 0, "The reversed port should no longer drive the network");
+        helper.<ColoredCableBlockEntity>getBlockEntity(cable).addColor(DyeColor.BLUE);
+        var multiColor = PerLevelNetworkDiagramCache.networkAt(level, start);
+        helper.assertTrue(reversed != multiColor, "Changing cable colors should rebuild the network");
+        helper.succeed();
+    }
+
     @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 100)
     public void redstoneExporterUpdatesOutputWithAirNeighbors(GameTestHelper helper) {
         BlockPos source = new BlockPos(1, 2, 1);

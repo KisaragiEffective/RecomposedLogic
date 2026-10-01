@@ -1,6 +1,7 @@
 package io.github.kisaragieffective.recomposedlogic.world.entity;
 
 import io.github.kisaragieffective.recomposedlogic.registry.ModBlockEntities;
+import io.github.kisaragieffective.recomposedlogic.world.PerLevelNetworkDiagramCache;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -20,6 +21,9 @@ public class ExternalPortBlockEntity extends BlockEntity {
 
     public void toggleExternalDirection() {
         externalOutput = !externalOutput;
+        if (level != null && !level.isClientSide) {
+            PerLevelNetworkDiagramCache.invalidateAround(level, worldPosition);
+        }
         setChanged();
     }
 

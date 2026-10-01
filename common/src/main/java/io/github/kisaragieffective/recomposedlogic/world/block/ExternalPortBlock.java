@@ -5,7 +5,6 @@ import net.minecraft.ChatFormatting;
 import io.github.kisaragieffective.recomposedlogic.world.LogicBlockKind;
 import io.github.kisaragieffective.recomposedlogic.world.LogicBlockKindProvider;
 import io.github.kisaragieffective.recomposedlogic.world.LogicState;
-import io.github.kisaragieffective.recomposedlogic.world.PerLevelNetworkDiagramCache;
 import io.github.kisaragieffective.recomposedlogic.world.PortSpec;
 import io.github.kisaragieffective.recomposedlogic.world.entity.ExternalPortBlockEntity;
 import net.minecraft.core.BlockPos;
@@ -67,7 +66,6 @@ public class ExternalPortBlock extends BaseEntityBlock implements LogicBlockKind
         }
         if (level.getBlockEntity(pos) instanceof ExternalPortBlockEntity logic) {
             logic.toggleExternalDirection();
-            PerLevelNetworkDiagramCache.invalidateAround(level, pos);
             player.displayClientMessage(net.minecraft.network.chat.Component.literal("External Port = " + (logic.externalOutput() ? "output" : "input")).withStyle(ChatFormatting.AQUA), true);
         }
         return InteractionResult.SUCCESS;

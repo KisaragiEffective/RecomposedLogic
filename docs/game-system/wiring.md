@@ -318,3 +318,12 @@ Channel Selector BlockおよびChannel Injector Blockは今回の実装範囲外
 | 複数色ケーブルを破壊すると保持色ごとのアイテムをドロップする | `multiColorCableDropContentsIncludesEveryHeldColor` | GameTest |
 
 描画モデルのピン位置・太さはクライアント側のBERによる見た目であり、現行の自動GameTestでは検証できない。リソースモデルを変更した場合は、X/Y/Zの各軸と6方向の接続をクライアント上で確認する。
+
+### 実行時のネットワークキャッシュ
+
+結合ネットワークはワールドごとに保持し、毎ゲームティックの全体スキャンは行わない。
+隣接更新時は更新座標とその6近傍のケーブル種別・色集合・ポートを比較し、接続構造が変わったネットワークだけを無効化する。次の評価時に再構築する。
+信号値だけの変更や、同じ接続構造でのケーブル・ジャンクション間の変換ではネットワークを保持する。信号値のキャッシュはゲームティックごとに更新する。
+チャンクのアンロード時は、そのチャンクに依存するネットワークを無効化する。
+
+GameTest `networkCacheSurvivesSignalUpdatesAcrossTicks`、`networkCacheInvalidatesAfterColorAndPortChanges`、`runtimeInvalidatesNetworkAfterCablePathChanges`で検証する。

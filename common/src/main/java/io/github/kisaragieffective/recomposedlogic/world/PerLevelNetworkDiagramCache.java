@@ -8,7 +8,6 @@ import io.github.kisaragieffective.recomposedlogic.world.block.PinCableBlock;
 import io.github.kisaragieffective.recomposedlogic.world.entity.ColoredCableBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 
@@ -73,7 +72,6 @@ public final class PerLevelNetworkDiagramCache {
         private final Set<BlockPos> dependencies = new HashSet<>();
         private int driverCount;
         private SourceEndpoint source;
-        private TopologySignature topologySignature;
 
         public List<CableEdge> edgesFrom(CableVisit visit) {
             return edges.getOrDefault(visit, List.of());
@@ -96,7 +94,8 @@ public final class PerLevelNetworkDiagramCache {
         private final Map<CableVisit, CableNetwork> networksByVisit = new HashMap<>();
         private final Map<Long, Set<CableNetwork>> networksByPosition = new HashMap<>();
         private final Map<Long, Set<CableNetwork>> networksByChunk = new HashMap<>();
-        private final Set<CableNetwork> pendingTopologyChecks = new HashSet<>();
+        private final Set<BlockPos> pendingTopologyChecks = new HashSet<>();
+        private final Map<Long, PositionSignature> signaturesByPosition = new HashMap<>();
         private int topologyUpdateDepth;
 
         private CableNetwork networkAt(Level level, CableVisit start) {
@@ -105,8 +104,7 @@ public final class PerLevelNetworkDiagramCache {
                 return cached;
             }
             CableNetwork network = build(level, start);
-            network.topologySignature = topologySignature(level, network);
-            register(network);
+            register(level, network);
             return network;
         }
 
@@ -149,86 +147,64 @@ public final class PerLevelNetworkDiagramCache {
             return network;
         }
 
-        private void register(CableNetwork network) {
+        private void register(Level level, CableNetwork network) {
             for (CableVisit visit : network.edges.keySet()) {
                 networksByVisit.put(visit, network);
             }
             for (BlockPos dependency : network.dependencies) {
+                signaturesByPosition.computeIfAbsent(dependency.asLong(), ignored -> positionSignature(level, dependency));
                 networksByPosition.computeIfAbsent(dependency.asLong(), ignored -> new HashSet<>()).add(network);
                 networksByChunk.computeIfAbsent(new ChunkPos(dependency).toLong(), ignored -> new HashSet<>()).add(network);
             }
         }
 
         private void beginTopologyUpdate(BlockPos pos) {
-            collectAround(pendingTopologyChecks, pos);
+            collectPositionsAround(pendingTopologyChecks, pos);
             topologyUpdateDepth++;
         }
 
         private void endTopologyUpdate(Level level) {
             if (--topologyUpdateDepth == 0) {
-                checkNetworks(level, pendingTopologyChecks);
+                checkPositions(level, pendingTopologyChecks);
                 pendingTopologyChecks.clear();
             }
         }
 
         private void checkAround(Level level, BlockPos pos) {
             if (topologyUpdateDepth > 0) {
-                collectAround(pendingTopologyChecks, pos);
+                collectPositionsAround(pendingTopologyChecks, pos);
                 return;
             }
-            Set<CableNetwork> affected = new HashSet<>();
-            collectAround(affected, pos);
-            checkNetworks(level, affected);
+            Set<BlockPos> positions = new HashSet<>();
+            collectPositionsAround(positions, pos);
+            checkPositions(level, positions);
         }
 
-        private void collectAround(Set<CableNetwork> affected, BlockPos pos) {
+        private static void collectPositionsAround(Set<BlockPos> positions, BlockPos pos) {
+            positions.add(pos.immutable());
             for (Direction direction : Direction.values()) {
-                collectAt(affected, pos.relative(direction));
+                positions.add(pos.relative(direction));
             }
-            collectAt(affected, pos);
         }
 
-        private void checkNetworks(Level level, Set<CableNetwork> networks) {
-            new HashSet<>(networks).stream()
-                    .filter(network -> !network.topologySignature.equals(topologySignature(level, network)))
-                    .forEach(this::remove);
+        private void checkPositions(Level level, Set<BlockPos> positions) {
+            Set<CableNetwork> affected = new HashSet<>();
+            for (BlockPos pos : positions) {
+                PositionSignature previous = signaturesByPosition.get(pos.asLong());
+                if (previous != null && !previous.equals(positionSignature(level, pos))) {
+                    collectAt(affected, pos);
+                }
+            }
+            affected.forEach(this::remove);
         }
 
-        // TODO: 772 invokes で 2166 ms
-        private static TopologySignature topologySignature(Level level, CableNetwork network) {
-            Map<CableVisit, VertexSignature> vertices = new HashMap<>();
-            for (CableVisit visit : network.edges.keySet()) {
-                LogicBlockKind kind = LogicState.kind(level, visit.pos());
-                if (kind != LogicBlockKind.PIN_CABLE && kind != LogicBlockKind.JUNCTION) {
-                    vertices.put(visit, VertexSignature.MISSING);
-                    continue;
-                }
-                int colorMask = level.getBlockEntity(visit.pos()) instanceof ColoredCableBlockEntity cable
-                        ? cable.colors().mask() : -1;
-                List<ConnectionSignature> connections = new ArrayList<>();
-                for (Direction direction : Direction.values()) {
-                    BlockPos next = visit.pos().relative(direction);
-                    LogicBlockKind nextKind = LogicState.kind(level, next);
-                    if (nextKind == LogicBlockKind.PIN_CABLE || nextKind == LogicBlockKind.JUNCTION) {
-                        PinCableBlock.TraversalConnection connection = PinCableBlock.traversalConnection(level, visit.pos(), next, visit.color());
-                        if (connection.connected()) {
-                            connections.add(ConnectionSignature.cable(direction, next, connection.color()));
-                        }
-                    } else {
-                        PinCableBlock.TraversalConnection connection = PinCableBlock.portTraversalStart(level, visit.pos());
-                        if (connection.connected() && (visit.color() == null || connection.color() == null || visit.color() == connection.color())) {
-                            List<PortSpec> ports = LogicState.ports(level, next).stream()
-                                    .filter(spec -> spec.direction() == direction.getOpposite())
-                                    .toList();
-                            if (!ports.isEmpty()) {
-                                connections.add(ConnectionSignature.block(direction, next, ports));
-                            }
-                        }
-                    }
-                }
-                vertices.put(visit, new VertexSignature(kind, colorMask, List.copyOf(connections)));
-            }
-            return new TopologySignature(Map.copyOf(vertices));
+        // Only inspect positions touched by an update, never the entire cached component.
+        private static PositionSignature positionSignature(Level level, BlockPos pos) {
+            LogicBlockKind kind = LogicState.kind(level, pos);
+            boolean cable = kind == LogicBlockKind.PIN_CABLE || kind == LogicBlockKind.JUNCTION;
+            int colorMask = cable && level.getBlockEntity(pos) instanceof ColoredCableBlockEntity colored
+                    ? colored.colors().mask() : -1;
+            return new PositionSignature(cable, colorMask, cable ? List.of() : List.copyOf(LogicState.ports(level, pos)));
         }
 
         private void invalidateChunk(ChunkPos chunkPos) {
@@ -251,6 +227,9 @@ public final class PerLevelNetworkDiagramCache {
             }
             for (BlockPos dependency : network.dependencies) {
                 removeIndex(networksByPosition, dependency.asLong(), network);
+                if (!networksByPosition.containsKey(dependency.asLong())) {
+                    signaturesByPosition.remove(dependency.asLong());
+                }
                 removeIndex(networksByChunk, new ChunkPos(dependency).toLong(), network);
             }
         }
@@ -266,24 +245,10 @@ public final class PerLevelNetworkDiagramCache {
         }
     }
 
-    private record TopologySignature(Map<CableVisit, VertexSignature> vertices) {
-    }
-
     public record SourceEndpoint(BlockPos pos, Direction direction) {
     }
 
-    private record VertexSignature(LogicBlockKind kind, int colorMask, List<ConnectionSignature> connections) {
-        private static final VertexSignature MISSING = new VertexSignature(null, 0, List.of());
-    }
-
-    private record ConnectionSignature(Direction direction, BlockPos target, DyeColor color, List<PortSpec> ports) {
-        private static ConnectionSignature cable(Direction direction, BlockPos target, DyeColor color) {
-            return new ConnectionSignature(direction, target, color, List.of());
-        }
-
-        private static ConnectionSignature block(Direction direction, BlockPos target, List<PortSpec> ports) {
-            return new ConnectionSignature(direction, target, null, List.copyOf(ports));
-        }
+    private record PositionSignature(boolean cable, int colorMask, List<PortSpec> ports) {
     }
 
     private static boolean hasOutputToward(Level level, BlockPos pos, Direction direction) {
